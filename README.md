@@ -2,14 +2,14 @@
 
 A Model Context Protocol (MCP) server built with FastAPI that provides weather information using the National Weather Service API. Features streamable HTTP transport for real-time communication with MCP Inspector.
 
-## 🌐 Live Azure Deployment
+## 🌐 Azure Deployment
 
 - **Azure URL**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/
 - **API Documentation**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/docs
 - **Health Check**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/
 - **MCP Endpoint**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/mcp/stream
 
-You can test the weather tools immediately without local setup:
+You can test the weather tools without local setup:
 
 ```bash
 # Test weather alerts for California
