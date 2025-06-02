@@ -2,29 +2,18 @@
 
 This guide explains how to deploy the Weather MCP Server to Azure App Service using Azure Developer CLI (azd).
 
-## 🎉 Current Deployment Status
-
-**The MCP server is successfully deployed and running on Azure!**
-
-- **Live URL**: https://app-web-h5fifvxtt5hca.azurewebsites.net/
-- **API Docs**: https://app-web-h5fifvxtt5hca.azurewebsites.net/docs
-- **MCP Endpoint**: https://app-web-h5fifvxtt5hca.azurewebsites.net/mcp/stream
-- **Resource Group**: `rg-dev`
-- **App Service**: `app-web-h5fifvxtt5hca`
-- **Region**: East US 2
-
 ## Quick Test
 
 Test the deployed weather tools:
 
 ```bash
 # Test CA weather alerts
-curl -X POST "https://app-web-h5fifvxtt5hca.azurewebsites.net/mcp/stream" \
+curl -X POST "https://<APP-SERVICE-NAME>.azurewebsites.net/mcp/stream" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_alerts", "arguments": {"state": "CA"}}}'
 
 # Test San Francisco weather forecast  
-curl -X POST "https://app-web-h5fifvxtt5hca.azurewebsites.net/mcp/stream" \
+curl -X POST "https://<APP-SERVICE-NAME>.azurewebsites.net/mcp/stream" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "get_forecast", "arguments": {"latitude": 37.7749, "longitude": -122.4194}}}'
 ```
