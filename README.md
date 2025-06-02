@@ -4,23 +4,21 @@ A Model Context Protocol (MCP) server built with FastAPI that provides weather i
 
 ## 🌐 Live Azure Deployment
 
-**The server is deployed and running live on Azure!**
-
-- **Azure URL**: https://<APP-SERVICE-NAME>.azurewebsites.net/
-- **API Documentation**: https://<APP-SERVICE-NAME>.azurewebsites.net/docs
-- **Health Check**: https://<APP-SERVICE-NAME>.azurewebsites.net/
-- **MCP Endpoint**: https://<APP-SERVICE-NAME>.azurewebsites.net/mcp/stream
+- **Azure URL**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/
+- **API Documentation**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/docs
+- **Health Check**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/
+- **MCP Endpoint**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/mcp/stream
 
 You can test the weather tools immediately without local setup:
 
 ```bash
 # Test weather alerts for California
-curl -X POST "https://<APP-SERVICE-NAME>.azurewebsites.net/mcp/stream" \
+curl -X POST "https://`<APP-SERVICE-NAME>`.azurewebsites.net/mcp/stream" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_alerts", "arguments": {"state": "CA"}}}'
 
 # Test weather forecast for San Francisco
-curl -X POST "https://<APP-SERVICE-NAME>.azurewebsites.net/mcp/stream" \
+curl -X POST "https://`<APP-SERVICE-NAME>`.azurewebsites.net/mcp/stream" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "get_forecast", "arguments": {"latitude": 37.7749, "longitude": -122.4194}}}'
 ```
@@ -79,7 +77,7 @@ Connect directly to the live Azure deployment:
     "weather-mcp-server-azure": {
       "transport": {
         "type": "http",
-        "url": "https://<APP-SERVICE-NAME>.azurewebsites.net/mcp/stream"
+        "url": "https://`<APP-SERVICE-NAME>`.azurewebsites.net/mcp/stream"
       },
       "name": "Weather MCP Server (Azure)",
       "description": "MCP Server with weather forecast and alerts tools hosted on Azure"
@@ -115,7 +113,7 @@ Connect directly to the live Azure deployment:
 
 ### Method 3: Web Test Interface
 
-Visit http://localhost:8000/test (local) or https://<APP-SERVICE-NAME>.azurewebsites.net/test (Azure) to use the built-in web interface for testing HTTP connectivity.
+Visit http://localhost:8000/test (local) or https://`<APP-SERVICE-NAME>`.azurewebsites.net/test (Azure) to use the built-in web interface for testing HTTP connectivity.
 
 ## API Endpoints
 
