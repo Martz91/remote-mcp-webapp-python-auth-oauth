@@ -10,6 +10,24 @@
     },
     "principalId": {
       "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "azureClientId": {
+      "value": "${AZURE_CLIENT_ID}"
+    },
+    "azureClientSecret": {
+      "value": "${AZURE_CLIENT_SECRET}"
+    },
+    "azureTenantId": {
+      "value": "${AZURE_TENANT_ID}"
+    },
+    "jwtSecretKey": {
+      "value": "${JWT_SECRET_KEY}"
+    },
+    "appSecretKey": {
+      "value": "${APP_SECRET_KEY}"
+    },
+    "environment": {
+      "value": "${ENVIRONMENT}"
     }
   }
 }

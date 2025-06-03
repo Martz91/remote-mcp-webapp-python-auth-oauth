@@ -1,33 +1,25 @@
-# Azure Deployment Guide
+# Azure Deployment Guide for MCP Server with OAuth
 
-This guide explains how to deploy the Weather MCP Server to Azure App Service using Azure Developer CLI (azd).
-
-## Quick Test
-
-Test the deployed weather tools:
-
-```bash
-# Test CA weather alerts
-curl -X POST "https://<APP-SERVICE-NAME>.azurewebsites.net/mcp/stream" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_alerts", "arguments": {"state": "CA"}}}'
-
-# Test San Francisco weather forecast  
-curl -X POST "https://<APP-SERVICE-NAME>.azurewebsites.net/mcp/stream" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "get_forecast", "arguments": {"latitude": 37.7749, "longitude": -122.4194}}}'
-```
+This guide explains how to deploy the Weather MCP Server with Azure OAuth authentication to Azure App Service using Azure Developer CLI (azd).
 
 ## Prerequisites for Deployment
 
 1. **Azure Developer CLI (azd)**: [Install azd](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
 2. **Azure CLI**: [Install Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
 3. **Azure Subscription**: Active Azure subscription
-4. **Git**: For version control
+4. **Azure App Registration**: Set up for OAuth (see AUTH_SETUP.md)
+5. **Git**: For version control
 
 ## Quick Start
 
-### 1. Initialize the Azure environment
+### 1. Complete OAuth Setup
+
+Before deploying, ensure you have completed the Azure OAuth setup from `AUTH_SETUP.md`:
+- Azure App Registration created
+- Client ID, Tenant ID, and Client Secret obtained
+- Local testing completed
+
+### 2. Initialize the Azure environment
 
 ```bash
 azd auth login
@@ -36,7 +28,18 @@ azd init
 
 When prompted, select "Use code in current directory" and confirm the environment name.
 
-### 2. Deploy to Azure
+### 3. Set Environment Variables
+
+Configure the OAuth credentials for your deployed application:
+
+```bash
+azd env set AZURE_CLIENT_ID "your-client-id"
+azd env set AZURE_TENANT_ID "your-tenant-id" 
+azd env set AZURE_CLIENT_SECRET "your-client-secret"
+azd env set JWT_SECRET_KEY "your-secure-jwt-secret-key"
+```
+
+### 4. Deploy to Azure
 
 ```bash
 azd up
@@ -44,24 +47,76 @@ azd up
 
 This command will:
 - Provision Azure resources (App Service, App Service Plan, Application Insights)
-- Deploy your application code
-- Configure the environment
+- Deploy your application code with OAuth configuration
+- Configure the environment variables
 
-### 3. Access your deployed application
+### 5. Update Azure App Registration
+
+After deployment, you **must** update your Azure App Registration to include the deployed URL:
+
+1. **Go to Azure Portal**: https://portal.azure.com
+2. **Navigate to**: Azure Active Directory → App registrations
+3. **Find your app**: Search for your app using the Client ID
+4. **Click Authentication** in the left sidebar
+5. **Add Redirect URI**:
+   - Under "Web" platform, click **"Add URI"**
+   - Enter: `https://your-app-name.azurewebsites.net/auth/callback`
+   - Click **Save**
+
+### 6. Test Your Deployment
 
 After deployment, azd will provide the URL for your application:
 ```
 Web URI: https://app-web-[unique-id].azurewebsites.net
 ```
 
-## Configuration
+Visit the following URLs to test:
+- **Root**: https://app-web-[unique-id].azurewebsites.net/
+- **OAuth Login**: https://app-web-[unique-id].azurewebsites.net/auth/login
+- **Test Page**: https://app-web-[unique-id].azurewebsites.net/test-auth
+- **API Docs**: https://app-web-[unique-id].azurewebsites.net/docs
+
+### 7. Test the Authentication Flow
+
+Once deployed, test your server with authentication:
+
+```bash
+# 1. First, get an authentication token by visiting:
+# https://your-app-name.azurewebsites.net/auth/login
+
+# 2. Then test the authenticated MCP endpoint:
+curl -X POST "https://your-app-name.azurewebsites.net/mcp/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_alerts", "arguments": {"state": "CA"}}}'
+```
+
+## OAuth Authentication Flow
 
 ### Environment Variables
 
-The following environment variables are automatically configured:
+The following OAuth environment variables are configured during deployment:
+
+- `AZURE_CLIENT_ID`: Your Azure App Registration Client ID
+- `AZURE_TENANT_ID`: Your Azure Active Directory Tenant ID  
+- `AZURE_CLIENT_SECRET`: Your Azure App Registration Client Secret
+- `JWT_SECRET_KEY`: Secret key for JWT token signing
 - `APPLICATIONINSIGHTS_CONNECTION_STRING`: For Application Insights monitoring
 - `WEBSITES_PORT`: Set to 8000 (FastAPI default)
-- `SCM_DO_BUILD_DURING_DEPLOYMENT`: Enables automatic pip install
+
+### Authentication Endpoints
+
+- **Login**: `/auth/login` - Redirects to Microsoft OAuth
+- **Callback**: `/auth/callback` - Handles OAuth callback and JWT creation
+- **User Info**: `/auth/me` - Get current user information (requires JWT token)
+- **Test Page**: `/test-auth` - Web interface for testing authentication
+
+### Protected Endpoints
+
+The following endpoints require authentication (Bearer JWT token):
+- `/mcp/stream` - Main MCP endpoint
+- `/tools` - List available tools
+- `/resources` - List available resources
 
 ### Custom Configuration
 
@@ -86,29 +141,43 @@ The deployed infrastructure includes:
 - **Application Insights**: Monitoring and telemetry
 - **Log Analytics Workspace**: Log storage and analysis
 
-## MCP Inspector Connection
+## MCP Inspector Connection with Authentication
 
-After deployment, connect MCP Inspector to your Azure-hosted server:
+After deployment, connect MCP Inspector to your Azure-hosted server with authentication:
 
-1. In MCP Inspector, add a new server connection
-2. Use HTTP transport type
-3. URL: `https://your-app.azurewebsites.net/mcp/stream`
+### Step 1: Get Authentication Token
 
-Example configuration:
+1. Visit your deployed app's login page: `https://your-app.azurewebsites.net/auth/login`
+2. Complete Microsoft OAuth flow
+3. Copy the JWT token from the response
+
+### Step 2: Configure MCP Inspector
+
+Add a new server connection with authentication headers:
+
 ```json
 {
   "mcpServers": {
-    "azure-weather-server": {
+    "azure-weather-server-auth": {
       "transport": {
         "type": "http",
-        "url": "https://app-web-[your-id].azurewebsites.net/mcp/stream"
+        "url": "https://app-web-[your-id].azurewebsites.net/mcp/stream",
+        "headers": {
+          "Authorization": "Bearer YOUR_JWT_TOKEN_HERE"
+        }
       },
-      "name": "Azure Weather MCP Server",
-      "description": "Cloud-hosted weather MCP server"
+      "name": "Azure Weather MCP Server (Authenticated)",
+      "description": "Cloud-hosted weather MCP server with Azure OAuth"
     }
   }
 }
 ```
+
+### Step 3: Test Connection
+
+Use the test endpoints to verify authentication:
+- **Test Page**: `https://your-app.azurewebsites.net/test-auth`
+- **User Info**: `https://your-app.azurewebsites.net/auth/me` (with JWT token)
 
 ## Monitoring
 
@@ -129,42 +198,6 @@ azd logs
 
 Or through Azure Portal:
 - App Service → Monitoring → Log stream
-
-## Scaling
-
-### Vertical Scaling (CPU/Memory)
-
-Update the SKU in `infra/core/host/appserviceplan.bicep`:
-
-```bicep
-sku: {
-  name: 'S1'  // Standard tier
-  capacity: 1
-}
-```
-
-### Horizontal Scaling (Instances)
-
-```bicep
-sku: {
-  name: 'B1'
-  capacity: 3  // Multiple instances
-}
-```
-
-## Cost Optimization
-
-- **Basic B1**: ~$13/month (1 core, 1.75 GB RAM)
-- **Free F1**: Available but with limitations (60 min/day runtime)
-- **Application Insights**: Pay-per-use (first 5GB/month free)
-
-To use Free tier, update the SKU:
-```bicep
-sku: {
-  name: 'F1'
-  capacity: 1
-}
-```
 
 ## Troubleshooting
 

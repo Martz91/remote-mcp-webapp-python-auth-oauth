@@ -1,37 +1,19 @@
-# FastAPI MCP Server with Weather Tools
+# FastAPI MCP Server with Azure OAuth Authentication
 
-A Model Context Protocol (MCP) server built with FastAPI that provides weather information using the National Weather Service API. Features streamable HTTP transport for real-time communication with MCP Inspector.
-
-## 🌐 Azure Deployment
-
-- **Azure URL**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/
-- **API Documentation**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/docs
-- **Health Check**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/
-- **MCP Endpoint**: https://`<APP-SERVICE-NAME>`.azurewebsites.net/mcp/stream
-
-You can test the weather tools without local setup:
-
-```bash
-# Test weather alerts for California
-curl -X POST "https://`<APP-SERVICE-NAME>`.azurewebsites.net/mcp/stream" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_alerts", "arguments": {"state": "CA"}}}'
-
-# Test weather forecast for San Francisco
-curl -X POST "https://`<APP-SERVICE-NAME>`.azurewebsites.net/mcp/stream" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "get_forecast", "arguments": {"latitude": 37.7749, "longitude": -122.4194}}}'
-```
+A Model Context Protocol (MCP) server built with FastAPI that provides weather information using the National Weather Service API. Features Azure OAuth 2.0 authentication and streamable HTTP transport for real-time communication with MCP Inspector.
 
 ## Features
 
 - **FastAPI Framework**: Modern, fast web framework for building APIs
+- **Azure OAuth 2.0 Authentication**: Secure authentication using Microsoft Azure AD
 - **MCP Protocol Compliance**: Full support for JSON-RPC 2.0 MCP protocol
 - **Streamable HTTP Transport**: HTTP-based streaming for MCP Inspector connectivity
+- **JWT Token Management**: Secure token-based authentication and authorization
 - **Weather Tools**: 
   - `get_alerts`: Get weather alerts for any US state
   - `get_forecast`: Get 5-day weather forecast for any location (latitude/longitude)
 - **Sample Resources**: Basic resource handling demonstration
+- **Azure App Service Deployment**: Ready for production deployment on Azure
 - **Virtual Environment**: Properly isolated Python environment
 - **Auto-reload**: Development server with automatic reloading
 - **National Weather Service API**: Real-time weather data from official US government source
@@ -40,8 +22,22 @@ curl -X POST "https://`<APP-SERVICE-NAME>`.azurewebsites.net/mcp/stream" \
 
 - Python 3.8+
 - pip (Python package installer)
+- Azure account (for OAuth setup and deployment)
+- Azure CLI (for deployment)
 
-## Setup
+## Quick Start
+
+### Option 1: Local Development Setup
+
+1. **Clone and navigate to the project**
+2. **Set up Azure OAuth** (see AUTH_SETUP.md for detailed instructions)
+3. **Create environment file** (copy from .env.example)
+4. **Install and run locally** (see Local Development section below)
+
+### Option 2: Deploy Your Own Instance
+Follow the instructions in DEPLOY.md to deploy your own instance to Azure.
+
+## Local Development Setup
 
 1. **Create and activate virtual environment:**
    ```powershell
@@ -66,27 +62,7 @@ curl -X POST "https://`<APP-SERVICE-NAME>`.azurewebsites.net/mcp/stream" \
 
 ## Connecting to MCP Inspector
 
-### Method 1: Azure-Hosted Server (No Setup Required)
-
-Connect directly to the live Azure deployment:
-
-**Configuration for MCP Inspector:**
-```json
-{
-  "mcpServers": {
-    "weather-mcp-server-azure": {
-      "transport": {
-        "type": "http",
-        "url": "https://`<APP-SERVICE-NAME>`.azurewebsites.net/mcp/stream"
-      },
-      "name": "Weather MCP Server (Azure)",
-      "description": "MCP Server with weather forecast and alerts tools hosted on Azure"
-    }
-  }
-}
-```
-
-### Method 2: Local Development Server
+### Method 1: Local Development Server
 
 1. **Start the MCP server** (it will run on http://localhost:8000)
 
@@ -98,8 +74,8 @@ Connect directly to the live Azure deployment:
 3. **Configuration file** (`mcp-config.json`):
    ```json
    {
-     "mcpServers": {
-       "weather-mcp-server-local": {
+     "mcpServers": {       
+      "weather-mcp-server-local": {
          "transport": {
            "type": "http",
            "url": "http://localhost:8000/mcp/stream"
@@ -111,9 +87,29 @@ Connect directly to the live Azure deployment:
    }
    ```
 
+### Method 2: Azure-Deployed Server
+
+If you deploy your own instance to Azure, use this configuration:
+
+**Configuration for MCP Inspector:**
+```json
+{
+  "mcpServers": {
+    "weather-mcp-server-azure": {
+      "transport": {
+        "type": "http",
+        "url": "https://<YOUR-APP-SERVICE-NAME>.azurewebsites.net/mcp/stream"
+      },
+      "name": "Weather MCP Server (Azure)",
+      "description": "MCP Server with weather forecast and alerts tools hosted on Azure"
+    }
+  }
+}
+```
+
 ### Method 3: Web Test Interface
 
-Visit http://localhost:8000/test (local) or https://`<APP-SERVICE-NAME>`.azurewebsites.net/test (Azure) to use the built-in web interface for testing HTTP connectivity.
+Visit http://localhost:8000/test (local) or https://<YOUR-APP-SERVICE-NAME>.azurewebsites.net/test (Azure) to use the built-in web interface for testing HTTP connectivity.
 
 ## API Endpoints
 

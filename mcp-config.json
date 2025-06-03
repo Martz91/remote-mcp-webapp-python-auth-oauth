@@ -7,14 +7,14 @@
       },
       "name": "Weather MCP Server (Local)",
       "description": "MCP Server with weather forecast and alerts tools running locally"
-    },
+    },    
     "weather-mcp-server-azure": {
       "transport": {
         "type": "http",
         "url": "https://<APP-SERVICE-NAME>.azurewebsites.net/mcp/stream"
       },
       "name": "Weather MCP Server (Azure)",
-      "description": "MCP Server with weather forecast and alerts tools hosted on Azure"
+      "description": "MCP Server with weather forecast and alerts tools hosted on Azure with OAuth authentication"
     }
   }
 }

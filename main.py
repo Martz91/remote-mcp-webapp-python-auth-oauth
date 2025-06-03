@@ -1,12 +1,19 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
+from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
 import logging
 import asyncio
 from contextlib import asynccontextmanager
 import httpx
+import os
+from dotenv import load_dotenv
+from auth import AuthService, get_current_user, optional_auth
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -321,17 +328,233 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    """Health check endpoint"""
-    return {"message": "MCP FastAPI Server is running", "status": "healthy"}
+    """Health check endpoint with authentication info"""
+    return {
+        "message": "MCP FastAPI Server with Azure OAuth is running",
+        "status": "healthy",
+        "authentication": {
+            "type": "Azure OAuth 2.0",
+            "login_endpoint": "/auth/login",
+            "test_page": "/test-auth",
+            "required_for": ["/mcp/stream", "/tools", "/resources"]
+        },
+        "endpoints": {
+            "login": "/auth/login",
+            "callback": "/auth/callback", 
+            "me": "/auth/me",
+            "test": "/test-auth",
+            "mcp": "/mcp/stream",
+            "docs": "/docs"
+        }
+    }
 
+# Authentication routes
+@app.get("/auth/login")
+async def login():
+    """Initiate Azure OAuth login"""
+    auth_url = AuthService.get_authorization_url()
+    return RedirectResponse(url=auth_url, status_code=302)
+
+@app.get("/auth/url")
+async def get_auth_url():
+    """Get the OAuth authorization URL as JSON"""
+    auth_url = AuthService.get_authorization_url()
+    return {"auth_url": auth_url}
+
+@app.get("/auth/callback")
+async def auth_callback(code: str = None, error: str = None, state: str = None):
+    """Handle OAuth callback from Azure"""
+    if error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"OAuth error: {error}"
+        )
+    
+    if not code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authorization code not provided"
+        )
+    
+    try:
+        # Exchange code for token
+        token_data = await AuthService.exchange_code_for_token(code)
+        access_token = token_data.get("access_token")
+        
+        # Get user info
+        user_info = await AuthService.get_user_info(access_token)
+        
+        # Create JWT token
+        jwt_token = AuthService.create_jwt_token(user_info)
+        
+        # Return success page with token
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Authentication Successful</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
+                .success {{ color: green; }}
+                .token {{ background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; word-break: break-all; }}
+                .user-info {{ background: #e8f4fd; padding: 15px; margin: 10px 0; border-radius: 5px; }}
+            </style>
+        </head>
+        <body>
+            <h1 class="success">✅ Authentication Successful!</h1>
+            <div class="user-info">
+                <h3>Welcome, {user_info.get('displayName', 'User')}!</h3>
+                <p><strong>Email:</strong> {user_info.get('mail') or user_info.get('userPrincipalName', 'N/A')}</p>
+                <p><strong>ID:</strong> {user_info.get('id', 'N/A')}</p>
+            </div>
+            <h3>Your JWT Token:</h3>
+            <div class="token">{jwt_token}</div>
+            <p><strong>Instructions:</strong></p>
+            <ol>
+                <li>Copy the token above</li>
+                <li>Use it in the Authorization header as: <code>Bearer &lt;token&gt;</code></li>
+                <li>The token expires in {os.getenv('JWT_EXPIRATION_HOURS', '24')} hours</li>
+            </ol>
+            <p><a href="/test-auth">Test your authentication</a> | <a href="/docs">API Documentation</a></p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html_content)
+        
+    except Exception as e:
+        logger.error(f"OAuth callback error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Authentication failed: {str(e)}"
+        )
+
+@app.get("/auth/me")
+async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Get current user information"""
+    return {"user": current_user}
+
+@app.get("/test-auth")
+async def test_auth_page():
+    """Serve a page to test authentication"""
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Test Authentication</title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+            .container { margin: 20px 0; }
+            input, button { padding: 10px; margin: 5px; }
+            input[type="text"] { width: 300px; }
+            .response { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 5px; min-height: 100px; }
+            .error { color: red; }
+            .success { color: green; }
+        </style>
+    </head>
+    <body>
+        <h1>MCP Server Authentication Test</h1>
+        
+        <div class="container">
+            <h3>1. Login to get token:</h3>
+            <button onclick="login()">Start Azure OAuth Login</button>
+        </div>
+        
+        <div class="container">
+            <h3>2. Test authenticated endpoint:</h3>
+            <input type="text" id="token" placeholder="Paste your JWT token here" />
+            <button onclick="testAuth()">Test /auth/me</button>
+        </div>
+        
+        <div class="container">
+            <h3>3. Test MCP endpoint with auth:</h3>
+            <button onclick="testMCPAuth()">Test MCP Tools (requires token above)</button>
+        </div>
+        
+        <div class="container">
+            <h3>Response:</h3>
+            <div id="response" class="response">Click a button to test...</div>
+        </div>
+          <script>
+            function login() {
+                fetch('/auth/url')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.auth_url) {
+                            window.open(data.auth_url, '_blank');
+                            document.getElementById('response').innerHTML = '<span class="success">✅ Login window opened. Complete the login and copy your token.</span>';
+                        }
+                    })
+                    .catch(error => {
+                        document.getElementById('response').innerHTML = '<span class="error">❌ Error: ' + error + '</span>';
+                    });
+            }
+            
+            function testAuth() {
+                const token = document.getElementById('token').value;
+                if (!token) {
+                    document.getElementById('response').innerHTML = '<span class="error">❌ Please enter a token first</span>';
+                    return;
+                }
+                
+                fetch('/auth/me', {
+                    headers: {
+                        'Authorization': 'Bearer ' + token
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('response').innerHTML = '<span class="success">✅ Success!</span><br><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                })
+                .catch(error => {
+                    document.getElementById('response').innerHTML = '<span class="error">❌ Error: ' + error + '</span>';
+                });
+            }
+            
+            function testMCPAuth() {
+                const token = document.getElementById('token').value;
+                if (!token) {
+                    document.getElementById('response').innerHTML = '<span class="error">❌ Please enter a token first</span>';
+                    return;
+                }
+                
+                fetch('/mcp/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/list",
+                        "params": {}
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('response').innerHTML = '<span class="success">✅ MCP Tools List Success!</span><br><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                })
+                .catch(error => {
+                    document.getElementById('response').innerHTML = '<span class="error">❌ Error: ' + error + '</span>';
+                });
+            }
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+# Update existing endpoints to require authentication
 @app.get("/tools")
-async def list_tools():
-    """REST endpoint to list available tools"""
+async def list_tools(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """REST endpoint to list available tools (requires authentication)"""
+    logger.info(f"User {current_user.get('email')} requested tools list")
     return {"tools": [tool.dict() for tool in mcp_server.tools.values()]}
 
 @app.get("/resources")
-async def list_resources():
-    """REST endpoint to list available resources"""
+async def list_resources(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """REST endpoint to list available resources (requires authentication)"""
+    logger.info(f"User {current_user.get('email')} requested resources list")
     return {"resources": [resource.dict() for resource in mcp_server.resources.values()]}
 
 @app.get("/test")
@@ -364,11 +587,11 @@ async def mcp_stream_info():
     }
 
 @app.post("/mcp/stream")
-async def mcp_stream_endpoint(request: Request):
-    """Main MCP endpoint with streamable HTTP support"""
+async def mcp_stream_endpoint(request: Request, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Main MCP endpoint with streamable HTTP support (requires authentication)"""
     try:
         message = await request.json()
-        logger.info(f"Received MCP message: {message}")
+        logger.info(f"User {current_user.get('email')} sent MCP message: {message}")
         
         method = message.get("method")
         params = message.get("params", {})
@@ -376,6 +599,12 @@ async def mcp_stream_endpoint(request: Request):
         
         if method == "initialize":
             result = await mcp_server.handle_initialize(params)
+            # Add user info to initialization response
+            result["userInfo"] = {
+                "email": current_user.get("email"),
+                "name": current_user.get("name"),
+                "authenticated": True
+            }
             return {
                 "jsonrpc": "2.0",
                 "id": msg_id,

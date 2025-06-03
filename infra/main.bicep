@@ -12,6 +12,28 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string
 
+// OAuth and application configuration parameters
+@description('Azure OAuth Client ID')
+param azureClientId string = ''
+
+@secure()
+@description('Azure OAuth Client Secret')
+param azureClientSecret string = ''
+
+@description('Azure Tenant ID')
+param azureTenantId string = ''
+
+@secure()
+@description('JWT Secret Key for token signing')
+param jwtSecretKey string = ''
+
+@secure()
+@description('Application Secret Key')
+param appSecretKey string = ''
+
+@description('Application Environment')
+param environment string = 'production'
+
 // Optional parameters to override the default azd resource naming conventions.
 // Add the following to main.parameters.json to provide values:
 // "resourceGroupName": {
@@ -40,6 +62,13 @@ module web './app/web.bicep' = {
     tags: tags
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     appServicePlanId: appServicePlan.outputs.id
+    // OAuth parameters
+    azureClientId: azureClientId
+    azureClientSecret: azureClientSecret
+    azureTenantId: azureTenantId
+    jwtSecretKey: jwtSecretKey
+    appSecretKey: appSecretKey
+    environment: environment
   }
 }
 
