@@ -1,248 +1,214 @@
-# FastAPI MCP Server with Azure OAuth Authentication
+# Python MCP Weather Server with Azure OAuth Authentication
 
-A Model Context Protocol (MCP) server built with FastAPI that provides weather information using the National Weather Service API. Features Azure OAuth 2.0 authentication and streamable HTTP transport for real-time communication with MCP Inspector.
+A Model Context Protocol (MCP) server built with FastAPI and Python that provides weather information using the National Weather Service API. Features Azure OAuth 2.0 authentication and is ready for deployment to Azure App Service with Azure Developer CLI (azd).
 
-## Features
+## 🌟 Features
 
 - **FastAPI Framework**: Modern, fast web framework for building APIs
-- **Azure OAuth 2.0 Authentication**: Secure authentication using Microsoft Azure AD
-- **MCP Protocol Compliance**: Full support for JSON-RPC 2.0 MCP protocol
-- **Streamable HTTP Transport**: HTTP-based streaming for MCP Inspector connectivity
+- **Azure OAuth 2.0 Authentication**: Secure authentication using Microsoft Entra ID
+- **MCP Protocol Compliance**: Full support for JSON-RPC 2.0 MCP protocol  
+- **HTTP Transport**: HTTP-based communication for web connectivity
 - **JWT Token Management**: Secure token-based authentication and authorization
-- **Weather Tools**: 
+- **Weather Tools**:
   - `get_alerts`: Get weather alerts for any US state
-  - `get_forecast`: Get 5-day weather forecast for any location (latitude/longitude)
-- **Sample Resources**: Basic resource handling demonstration
-- **Azure App Service Deployment**: Ready for production deployment on Azure
-- **Virtual Environment**: Properly isolated Python environment
-- **Auto-reload**: Development server with automatic reloading
+  - `get_forecast`: Get detailed weather forecast for any location
+- **Azure Ready**: Pre-configured for Azure App Service deployment
+- **Web Test Interface**: Built-in HTML interface for testing authentication and tools
 - **National Weather Service API**: Real-time weather data from official US government source
 
-## Prerequisites
+## 🔐 Authentication
+
+This server requires Azure OAuth 2.0 authentication. All MCP endpoints are protected and require a valid JWT token.
+
+**⚠️ Important**: Before running locally or deploying, you must complete the OAuth setup. See [AUTH_SETUP.md](AUTH_SETUP.md) for detailed instructions on:
+- Creating an Azure App Registration
+- Configuring client secrets and permissions
+- Setting up redirect URIs for both local and production environments
+
+## 💻 Local Development
+
+### Prerequisites
 
 - Python 3.8+
 - pip (Python package installer)
-- Azure account (for OAuth setup and deployment)
-- Azure CLI (for deployment)
+- Azure account (for OAuth setup)
+- **Completed OAuth setup** (see [AUTH_SETUP.md](AUTH_SETUP.md))
 
-## Quick Start
+### Setup & Run
 
-### Option 1: Local Development Setup
+1. **Complete OAuth setup first**:
+   Follow the instructions in [AUTH_SETUP.md](AUTH_SETUP.md) to create your Azure App Registration.
 
-1. **Clone and navigate to the project**
-2. **Set up Azure OAuth** (see AUTH_SETUP.md for detailed instructions)
-3. **Create environment file** (copy from .env.example)
-4. **Install and run locally** (see Local Development section below)
-
-### Option 2: Deploy Your Own Instance
-Follow the instructions in DEPLOY.md to deploy your own instance to Azure.
-
-## Local Development Setup
-
-1. **Create and activate virtual environment:**
-   ```powershell
+2. **Clone and install dependencies**:
+   ```bash
+   git clone <your-repo-url>
+   cd remote-mcp-webapp-python-auth-oauth
    python -m venv venv
-   .\venv\Scripts\Activate.ps1
-   ```
-
-2. **Install dependencies:**
-   ```powershell
+   .\venv\Scripts\Activate.ps1  # Windows
+   # source venv/bin/activate   # macOS/Linux
    pip install -r requirements.txt
    ```
 
-3. **Start the server:**
-   ```powershell
-   .\start_server.ps1
-   ```
-   
-   Or manually:
-   ```powershell
-   .\venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+3. **Configure environment variables**:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your Azure OAuth credentials from AUTH_SETUP.md
    ```
 
-## Connecting to MCP Inspector
-
-### Method 1: Local Development Server
-
-1. **Start the MCP server** (it will run on http://localhost:8000)
-
-2. **In MCP Inspector v0.13.0:**
-   - Add a new server connection
-   - Use HTTP transport type
-   - URL: `http://localhost:8000/mcp/stream`
-
-3. **Configuration file** (`mcp-config.json`):
-   ```json
-   {
-     "mcpServers": {       
-      "weather-mcp-server-local": {
-         "transport": {
-           "type": "http",
-           "url": "http://localhost:8000/mcp/stream"
-         },
-         "name": "Weather MCP Server (Local)",
-         "description": "MCP Server with weather forecast and alerts tools running locally"
-       }
-     }
-   }
+4. **Start the development server**:
+   ```bash
+   .\start_server.ps1  # Windows
+   # or manually:
+   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
-### Method 2: Azure-Deployed Server
+5. **Access the server**:
+   - Server: http://localhost:8000/
+   - Health Check: http://localhost:8000/health
+   - **Authentication Test**: http://localhost:8000/test-auth
+   - API Docs: http://localhost:8000/docs
 
-If you deploy your own instance to Azure, use this configuration:
+## 🔌 Connect to the Local MCP Server
 
-**Configuration for MCP Inspector:**
+### Authentication Required
+
+Before connecting any MCP client, you must authenticate:
+
+1. **Get JWT Token**: Visit http://localhost:8000/test-auth
+2. **Login with Microsoft**: Complete the OAuth flow
+3. **Copy JWT Token**: Use the token in your MCP client configuration
+
+### Using MCP Inspector
+
+1. **In a new terminal window, install and run MCP Inspector**:
+   ```bash
+   npx @modelcontextprotocol/inspector
+   ```
+
+2. **CTRL+click the URL** displayed by the app (e.g. http://localhost:5173/#resources)
+
+3. **Configure authenticated connection**:
+   - Set transport type to `HTTP`
+   - Set URL to: `http://localhost:8000/`
+   - **Add Authorization header**: `Bearer <your-jwt-token>`
+
+4. **Test the connection**: List Tools, click on a tool, and Run Tool
+
+### Configuration for MCP Clients
+
 ```json
 {
   "mcpServers": {
-    "weather-mcp-server-azure": {
+    "weather-mcp-server-local": {
       "transport": {
         "type": "http",
-        "url": "https://<YOUR-APP-SERVICE-NAME>.azurewebsites.net/mcp/stream"
+        "url": "http://localhost:8000/",
+        "headers": {
+          "Authorization": "Bearer <your-jwt-token>"
+        }
       },
-      "name": "Weather MCP Server (Azure)",
-      "description": "MCP Server with weather forecast and alerts tools hosted on Azure"
+      "name": "Weather MCP Server (Local with Auth)",
+      "description": "Authenticated MCP Server with weather tools"
     }
   }
 }
 ```
 
-### Method 3: Web Test Interface
+## 🚀 Quick Deploy to Azure
 
-Visit http://localhost:8000/test (local) or https://<YOUR-APP-SERVICE-NAME>.azurewebsites.net/test (Azure) to use the built-in web interface for testing HTTP connectivity.
+### Prerequisites
 
-## API Endpoints
+- [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
+- [Azure Developer CLI (azd)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
+- Active Azure subscription
+- **Completed OAuth setup** (see [AUTH_SETUP.md](AUTH_SETUP.md))
 
-- **GET /health**: Server health check
-- **POST /mcp/stream**: Main MCP endpoint with streamable HTTP
-- **GET /mcp/capabilities**: Get server capabilities
-- **GET /test**: Web-based HTTP test interface
-- **POST /mcp**: HTTP MCP endpoint (legacy)
+### Deploy in 4 Commands
 
-## Usage
-
-### Start the server:
 ```bash
-pip install -r requirements.txt
-python main.py
+# 1. Login to Azure
+azd auth login
+
+# 2. Initialize the project  
+azd init
+
+# 3. Set OAuth environment variables (from your AUTH_SETUP.md)
+azd env set AZURE_CLIENT_ID "your-client-id"
+azd env set AZURE_TENANT_ID "your-tenant-id"
+azd env set AZURE_CLIENT_SECRET "your-client-secret"
+azd env set JWT_SECRET_KEY "your-secure-jwt-secret"
+
+# 4. Deploy to Azure
+azd up
 ```
 
-The server will start on http://localhost:8000
+### Post-Deployment Setup
 
-### Example MCP requests:
+**⚠️ Critical**: After deployment, you must update your Azure App Registration:
 
-#### Initialize
+1. Note your deployed URL: `https://app-web-[unique-id].azurewebsites.net/`
+2. Go to Azure Portal → Microsoft Entra ID → App registrations → Your App
+3. Click **Authentication** → Add redirect URI:
+   `https://app-web-[unique-id].azurewebsites.net/auth/callback`
+4. Click **Save**
+
+### Test Your Deployment
+
+After deployment, your authenticated MCP server will be available at:
+- **Authentication Test**: `https://<your-app>.azurewebsites.net/test-auth`
+- **Health Check**: `https://<your-app>.azurewebsites.net/health`
+- **MCP Capabilities**: `https://<your-app>.azurewebsites.net/mcp/capabilities`
+- **API Docs**: `https://<your-app>.azurewebsites.net/docs`
+
+## 🔌 Connect to the Remote MCP Server
+
+Follow the same guidance as the local setup, but use your Azure App Service URL and ensure you have a valid JWT token from the deployed authentication endpoint.
+
+**Configuration for deployed server**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "method": "initialize",
-  "params": {},
-  "id": 1
-}
-```
-
-#### List Tools
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "tools/list",
-  "params": {},
-  "id": 2
-}
-```
-
-#### Call Weather Alert Tool
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "tools/call",
-  "params": {
-    "name": "get_alerts",
-    "arguments": {
-      "state": "CA"
+  "mcpServers": {
+    "weather-mcp-server-azure": {
+      "transport": {
+        "type": "http", 
+        "url": "https://<your-app>.azurewebsites.net/",
+        "headers": {
+          "Authorization": "Bearer <your-jwt-token>"
+        }
+      },
+      "name": "Weather MCP Server (Azure with Auth)",
+      "description": "Authenticated MCP Server hosted on Azure"
     }
-  },
-  "id": 3
+  }
 }
 ```
 
-#### Call Weather Forecast Tool
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "tools/call",
-  "params": {
-    "name": "get_forecast",
-    "arguments": {
-      "latitude": 37.7749,
-      "longitude": -122.4194
-    }
-  },
-  "id": 4
-}
-```
+## 🧪 Testing
 
-## Testing
+- **Local**: Visit http://localhost:8000/test-auth for an interactive authentication and testing interface
+- **Azure**: Visit `https://<your-app>.azurewebsites.net/test-auth` for your deployed instance
 
-### Test with Python client:
-```powershell
-.\venv\Scripts\python.exe test_http_client.py  # Streamable HTTP client
-```
+The test interface allows you to:
+1. Login with Microsoft OAuth
+2. View your JWT token and user information  
+3. Test authenticated MCP endpoints
+4. Try weather tools with sample data
 
-### Test with web interface:
-Open http://localhost:8000/test in your browser
 
-## Available Tools
+## 🌦️ Data Source
 
-1. **get_alerts**: Get weather alerts for a US state
-   ```json
-   {
-     "name": "get_alerts",
-     "arguments": {
-       "state": "CA"
-     }
-   }
-   ```
-   - **Parameter**: `state` (string) - Two-letter US state code (e.g., CA, NY, TX)
-   - **Returns**: Active weather alerts including severity, description, and instructions
-
-2. **get_forecast**: Get weather forecast for a location
-   ```json
-   {
-     "name": "get_forecast", 
-     "arguments": {
-       "latitude": 37.7749,
-       "longitude": -122.4194
-     }
-   }
-   ```
-   - **Parameters**: 
-     - `latitude` (number) - Latitude coordinate
-     - `longitude` (number) - Longitude coordinate
-   - **Returns**: 5-day weather forecast with temperature, wind, and detailed conditions
-
-## Weather Data Source
-
-This server uses the **National Weather Service (NWS) API**, which provides:
+This server uses the National Weather Service (NWS) API:
 - Real-time weather alerts and warnings
-- Detailed weather forecasts
+- Detailed weather forecasts  
 - Official US government weather data
 - No API key required
 - High reliability and accuracy
 
-## Available Resources
+## 🔒 Security Features
 
-- **mcp://server/sample**: Sample resource for demonstration
-
-## Troubleshooting
-
-### MCP Inspector Connection Issues:
-1. Ensure the server is running on http://localhost:8000
-2. Verify MCP endpoint is accessible: http://localhost:8000/mcp/stream
-3. Check capabilities endpoint: http://localhost:8000/mcp/capabilities
-4. Try the web test interface first: http://localhost:8000/test
-
-### Common Issues:
-- **Port already in use**: Change the port in startup commands
-- **Virtual environment not activated**: Run `.\venv\Scripts\Activate.ps1`
-- **Dependencies missing**: Run `pip install -r requirements.txt`
+- ✅ Azure OAuth 2.0 integration with Microsoft Entra ID
+- ✅ JWT tokens with configurable expiration (24 hours default)
+- ✅ Secure token validation on all protected endpoints
+- ✅ User information retrieval from Microsoft Graph API
+- ✅ Request logging with user identification
+- ✅ CORS protection and HTTPS enforcement
