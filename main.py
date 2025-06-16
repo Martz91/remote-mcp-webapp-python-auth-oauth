@@ -1,6 +1,6 @@
-from fastapi import FastAPI, HTTPException, Request, Depends, status
+from fastapi import FastAPI, HTTPException, Request, Depends, status, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse, JSONResponse
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
@@ -9,8 +9,19 @@ import asyncio
 from contextlib import asynccontextmanager
 import httpx
 import os
+from urllib.parse import parse_qs
 from dotenv import load_dotenv
-from auth import AuthService, get_current_user, optional_auth
+from mcp_auth import (
+    MCPAuthService, 
+    AuthorizationServerMetadata,
+    ClientRegistrationRequest,
+    ClientRegistrationResponse,
+    TokenRequest,
+    TokenResponse,
+    MCP_PROTOCOL_VERSION,
+    get_current_user,
+    optional_auth
+)
 
 # Load environment variables
 load_dotenv()
@@ -61,6 +72,63 @@ Severity: {props.get('severity', 'Unknown')}
 Description: {props.get('description', 'No description available')}
 Instructions: {props.get('instruction', 'No specific instructions provided')}
 """
+
+# Weather Tool Implementation Functions
+async def get_forecast(latitude: float, longitude: float) -> str:
+    """Get weather forecast for given coordinates using NWS API."""
+    try:
+        # Get grid point
+        points_url = f"https://api.weather.gov/points/{latitude},{longitude}"
+        points_data = await make_nws_request(points_url)
+        
+        if not points_data:
+            return "Unable to get grid point data from NWS"
+        
+        # Get forecast URL
+        forecast_url = points_data["properties"]["forecast"]
+        forecast_data = await make_nws_request(forecast_url)
+        
+        if not forecast_data:
+            return "Unable to get forecast data from NWS"
+        
+        # Format the forecast
+        periods = forecast_data["properties"]["periods"][:5]  # Next 5 periods
+        forecast_text = "Weather Forecast:\n\n"
+        
+        for period in periods:
+            forecast_text += f"{period['name']}: {period['detailedForecast']}\n\n"
+        
+        return forecast_text
+        
+    except Exception as e:
+        logger.error(f"Error getting forecast: {e}")
+        return f"Error getting forecast: {str(e)}"
+
+async def get_alerts(state: str) -> str:
+    """Get weather alerts for a US state using NWS API."""
+    try:
+        alerts_url = f"https://api.weather.gov/alerts/active?area={state.upper()}"
+        alerts_data = await make_nws_request(alerts_url)
+        
+        if not alerts_data:
+            return f"Unable to get alerts data for {state.upper()}"
+        
+        features = alerts_data.get("features", [])
+        
+        if not features:
+            return f"No active weather alerts for {state.upper()}"
+        
+        alerts_text = f"Active Weather Alerts for {state.upper()}:\n\n"
+        
+        for feature in features[:10]:  # Limit to 10 alerts
+            alerts_text += format_alert(feature)
+            alerts_text += "\n" + "="*50 + "\n\n"
+        
+        return alerts_text
+        
+    except Exception as e:
+        logger.error(f"Error getting alerts: {e}")
+        return f"Error getting alerts for {state}: {str(e)}"
 
 # MCP Server Class
 class MCPServer:
@@ -317,6 +385,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Initialize MCP-compliant OAuth service
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+mcp_auth = MCPAuthService(BASE_URL)
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -325,6 +397,100 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# MCP Authorization Specification Endpoints (OAuth 2.1)
+
+@app.get("/.well-known/oauth-authorization-server", response_model=AuthorizationServerMetadata)
+async def get_authorization_server_metadata(request: Request):
+    """OAuth 2.0 Authorization Server Metadata (RFC 8414)"""
+    # Check for MCP Protocol Version header
+    mcp_version = request.headers.get("MCP-Protocol-Version")
+    if mcp_version:
+        logger.info(f"MCP Protocol Version: {mcp_version}")
+    
+    return mcp_auth.get_metadata()
+
+@app.post("/register", response_model=ClientRegistrationResponse, status_code=201)
+async def register_client(request: ClientRegistrationRequest):
+    """Dynamic Client Registration (RFC 7591)"""
+    try:
+        return mcp_auth.register_client(request)
+    except Exception as e:
+        logger.error(f"Client registration failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/authorize")
+async def authorize(
+    response_type: str,
+    client_id: str,
+    redirect_uri: str,
+    code_challenge: str,
+    code_challenge_method: str = "S256",
+    state: Optional[str] = None,
+    scope: Optional[str] = None
+):
+    """OAuth 2.1 Authorization Endpoint"""
+    
+    if response_type != "code":
+        raise HTTPException(status_code=400, detail="Unsupported response_type")
+    
+    if code_challenge_method != "S256":
+        raise HTTPException(status_code=400, detail="Unsupported code_challenge_method")
+    
+    try:
+        # Create authorization URL that redirects to Azure for third-party auth
+        auth_url = await mcp_auth.create_authorization_url(
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            state=state,
+            scope=scope
+        )
+        
+        # Redirect user to Azure OAuth
+        return RedirectResponse(url=auth_url)
+        
+    except Exception as e:
+        logger.error(f"Authorization failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/auth/azure/callback")
+async def azure_callback(code: str, state: str):
+    """Handle Azure OAuth callback (third-party authorization)"""
+    try:
+        # Process Azure callback and redirect to original client
+        redirect_url = await mcp_auth.handle_azure_callback(code, state)
+        return RedirectResponse(url=redirect_url)
+        
+    except Exception as e:
+        logger.error(f"Azure callback failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/token", response_model=TokenResponse)
+async def token_endpoint(
+    grant_type: str = Form(...),
+    code: Optional[str] = Form(None),
+    redirect_uri: Optional[str] = Form(None),
+    client_id: str = Form(...),
+    code_verifier: Optional[str] = Form(None),
+    refresh_token: Optional[str] = Form(None)
+):
+    """OAuth 2.1 Token Endpoint"""
+    
+    request = TokenRequest(
+        grant_type=grant_type,
+        code=code,
+        redirect_uri=redirect_uri,
+        client_id=client_id,
+        code_verifier=code_verifier,
+        refresh_token=refresh_token
+    )
+    
+    try:
+        return await mcp_auth.exchange_code_for_token(request)
+    except Exception as e:
+        logger.error(f"Token exchange failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/")
 async def root():
@@ -345,206 +511,19 @@ async def root():
             "test": "/test-auth",
             "mcp": "/mcp/stream",
             "docs": "/docs"
-        }
-    }
+        }    }
 
-# Authentication routes
-@app.get("/auth/login")
-async def login():
-    """Initiate Azure OAuth login"""
-    auth_url = AuthService.get_authorization_url()
-    return RedirectResponse(url=auth_url, status_code=302)
-
-@app.get("/auth/url")
-async def get_auth_url():
-    """Get the OAuth authorization URL as JSON"""
-    auth_url = AuthService.get_authorization_url()
-    return {"auth_url": auth_url}
-
-@app.get("/auth/callback")
-async def auth_callback(code: str = None, error: str = None, state: str = None):
-    """Handle OAuth callback from Azure"""
-    if error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"OAuth error: {error}"
-        )
-    
-    if not code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Authorization code not provided"
-        )
-    
-    try:
-        # Exchange code for token
-        token_data = await AuthService.exchange_code_for_token(code)
-        access_token = token_data.get("access_token")
-        
-        # Get user info
-        user_info = await AuthService.get_user_info(access_token)
-        
-        # Create JWT token
-        jwt_token = AuthService.create_jwt_token(user_info)
-        
-        # Return success page with token
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Authentication Successful</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
-                .success {{ color: green; }}
-                .token {{ background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; word-break: break-all; }}
-                .user-info {{ background: #e8f4fd; padding: 15px; margin: 10px 0; border-radius: 5px; }}
-            </style>
-        </head>
-        <body>
-            <h1 class="success">✅ Authentication Successful!</h1>
-            <div class="user-info">
-                <h3>Welcome, {user_info.get('displayName', 'User')}!</h3>
-                <p><strong>Email:</strong> {user_info.get('mail') or user_info.get('userPrincipalName', 'N/A')}</p>
-                <p><strong>ID:</strong> {user_info.get('id', 'N/A')}</p>
-            </div>
-            <h3>Your JWT Token:</h3>
-            <div class="token">{jwt_token}</div>
-            <p><strong>Instructions:</strong></p>
-            <ol>
-                <li>Copy the token above</li>
-                <li>Use it in the Authorization header as: <code>Bearer &lt;token&gt;</code></li>
-                <li>The token expires in {os.getenv('JWT_EXPIRATION_HOURS', '24')} hours</li>
-            </ol>
-            <p><a href="/test-auth">Test your authentication</a> | <a href="/docs">API Documentation</a></p>
-        </body>
-        </html>
-        """
-        return HTMLResponse(content=html_content)
-        
-    except Exception as e:
-        logger.error(f"OAuth callback error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Authentication failed: {str(e)}"
-        )
+@app.get("/test-auth")
+async def test_auth_page():
+    """Serve the new MCP OAuth 2.1 test interface"""
+    return FileResponse("mcp_oauth_test.html")
 
 @app.get("/auth/me")
 async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get current user information"""
     return {"user": current_user}
 
-@app.get("/test-auth")
-async def test_auth_page():
-    """Serve a page to test authentication"""
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Test Authentication</title>
-        <style>
-            body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
-            .container { margin: 20px 0; }
-            input, button { padding: 10px; margin: 5px; }
-            input[type="text"] { width: 300px; }
-            .response { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 5px; min-height: 100px; }
-            .error { color: red; }
-            .success { color: green; }
-        </style>
-    </head>
-    <body>
-        <h1>MCP Server Authentication Test</h1>
-        
-        <div class="container">
-            <h3>1. Login to get token:</h3>
-            <button onclick="login()">Start Azure OAuth Login</button>
-        </div>
-        
-        <div class="container">
-            <h3>2. Test authenticated endpoint:</h3>
-            <input type="text" id="token" placeholder="Paste your JWT token here" />
-            <button onclick="testAuth()">Test /auth/me</button>
-        </div>
-        
-        <div class="container">
-            <h3>3. Test MCP endpoint with auth:</h3>
-            <button onclick="testMCPAuth()">Test MCP Tools (requires token above)</button>
-        </div>
-        
-        <div class="container">
-            <h3>Response:</h3>
-            <div id="response" class="response">Click a button to test...</div>
-        </div>
-          <script>
-            function login() {
-                fetch('/auth/url')
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.auth_url) {
-                            window.open(data.auth_url, '_blank');
-                            document.getElementById('response').innerHTML = '<span class="success">✅ Login window opened. Complete the login and copy your token.</span>';
-                        }
-                    })
-                    .catch(error => {
-                        document.getElementById('response').innerHTML = '<span class="error">❌ Error: ' + error + '</span>';
-                    });
-            }
-            
-            function testAuth() {
-                const token = document.getElementById('token').value;
-                if (!token) {
-                    document.getElementById('response').innerHTML = '<span class="error">❌ Please enter a token first</span>';
-                    return;
-                }
-                
-                fetch('/auth/me', {
-                    headers: {
-                        'Authorization': 'Bearer ' + token
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('response').innerHTML = '<span class="success">✅ Success!</span><br><pre>' + JSON.stringify(data, null, 2) + '</pre>';
-                })
-                .catch(error => {
-                    document.getElementById('response').innerHTML = '<span class="error">❌ Error: ' + error + '</span>';
-                });
-            }
-            
-            function testMCPAuth() {
-                const token = document.getElementById('token').value;
-                if (!token) {
-                    document.getElementById('response').innerHTML = '<span class="error">❌ Please enter a token first</span>';
-                    return;
-                }
-                
-                fetch('/mcp/stream', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + token
-                    },
-                    body: JSON.stringify({
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "tools/list",
-                        "params": {}
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('response').innerHTML = '<span class="success">✅ MCP Tools List Success!</span><br><pre>' + JSON.stringify(data, null, 2) + '</pre>';
-                })
-                .catch(error => {
-                    document.getElementById('response').innerHTML = '<span class="error">❌ Error: ' + error + '</span>';
-                });
-            }
-        </script>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
-
-# Update existing endpoints to require authentication
+# MCP Tool Endpoints (require authentication)
 @app.get("/tools")
 async def list_tools(current_user: Dict[str, Any] = Depends(get_current_user)):
     """REST endpoint to list available tools (requires authentication)"""
@@ -556,11 +535,6 @@ async def list_resources(current_user: Dict[str, Any] = Depends(get_current_user
     """REST endpoint to list available resources (requires authentication)"""
     logger.info(f"User {current_user.get('email')} requested resources list")
     return {"resources": [resource.dict() for resource in mcp_server.resources.values()]}
-
-@app.get("/test")
-async def serve_test_page():
-    """Serve the HTTP test page"""
-    return FileResponse("test_http_web.html")
 
 # MCP Streamable HTTP Endpoints
 @app.get("/mcp/stream")
@@ -590,6 +564,11 @@ async def mcp_stream_info():
 async def mcp_stream_endpoint(request: Request, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Main MCP endpoint with streamable HTTP support (requires authentication)"""
     try:
+        # Check for MCP Protocol Version header
+        mcp_version = request.headers.get("MCP-Protocol-Version")
+        if mcp_version and mcp_version != MCP_PROTOCOL_VERSION:
+            logger.warning(f"Client using MCP version {mcp_version}, server supports {MCP_PROTOCOL_VERSION}")
+        
         message = await request.json()
         logger.info(f"User {current_user.get('email')} sent MCP message: {message}")
         
@@ -599,12 +578,13 @@ async def mcp_stream_endpoint(request: Request, current_user: Dict[str, Any] = D
         
         if method == "initialize":
             result = await mcp_server.handle_initialize(params)
-            # Add user info to initialization response
+            # Add user info and protocol version to initialization response
             result["userInfo"] = {
                 "email": current_user.get("email"),
                 "name": current_user.get("name"),
                 "authenticated": True
             }
+            result["serverInfo"]["protocolVersion"] = MCP_PROTOCOL_VERSION
             return {
                 "jsonrpc": "2.0",
                 "id": msg_id,
@@ -682,6 +662,80 @@ async def mcp_stream_options():
         "methods": ["POST", "OPTIONS"],
         "headers": ["Content-Type", "Accept"]
     }
+
+# Individual MCP Tool Endpoints (for direct testing)
+@app.post("/mcp/get_forecast")
+async def get_forecast_endpoint(
+    request: Request,
+    data: dict = Body(...)
+):
+    """Direct endpoint for weather forecast tool"""
+    # Check for MCP protocol version
+    protocol_version = request.headers.get("MCP-Protocol-Version")
+    if protocol_version:
+        logger.info(f"MCP Protocol Version: {protocol_version}")
+    
+    # Require authentication
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header required"
+        )
+    
+    try:
+        latitude = data.get("latitude")
+        longitude = data.get("longitude")
+        
+        if latitude is None or longitude is None:
+            raise HTTPException(
+                status_code=400,
+                detail="latitude and longitude are required"
+            )
+        
+        # Call the weather forecast function
+        forecast_result = await get_forecast(latitude, longitude)
+        return {"result": forecast_result}
+        
+    except Exception as e:
+        logger.error(f"Error in get_forecast: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/mcp/get_alerts")
+async def get_alerts_endpoint(
+    request: Request,
+    data: dict = Body(...)
+):
+    """Direct endpoint for weather alerts tool"""
+    # Check for MCP protocol version
+    protocol_version = request.headers.get("MCP-Protocol-Version")
+    if protocol_version:
+        logger.info(f"MCP Protocol Version: {protocol_version}")
+    
+    # Require authentication
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header required"
+        )
+    
+    try:
+        state = data.get("state")
+        
+        if not state:
+            raise HTTPException(
+                status_code=400,
+                detail="state is required"
+            )
+        
+        # Call the weather alerts function
+        alerts_result = await get_alerts(state)
+        return {"result": alerts_result}
+        
+    except Exception as e:
+        logger.error(f"Error in get_alerts: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

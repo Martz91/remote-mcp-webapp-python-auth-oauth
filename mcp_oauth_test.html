@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP OAuth 2.1 Test Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fafafa;
+        }
+        .step {
+            margin: 15px 0;
+            padding: 15px;
+            background: #e8f4fd;
+            border-radius: 5px;
+            border-left: 4px solid #2196F3;
+        }
+        .success {
+            color: #4CAF50;
+            background: #e8f5e8;
+            border-left-color: #4CAF50;
+        }
+        .error {
+            color: #f44336;
+            background: #ffeaea;
+            border-left-color: #f44336;
+        }
+        .warning {
+            color: #ff9800;
+            background: #fff3e0;
+            border-left-color: #ff9800;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1976D2;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .code {
+            background: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 MCP OAuth 2.1 Test Interface</h1>
+            <p>Test the Model Context Protocol OAuth 2.1 authentication flow</p>
+        </div>
+
+        <div class="section">
+            <h2>📋 MCP Authorization Flow Steps</h2>
+            <div class="step">
+                <strong>Step 1:</strong> Discover server metadata and register client
+            </div>
+            <div class="step">
+                <strong>Step 2:</strong> Generate PKCE parameters and initiate authorization
+            </div>
+            <div class="step">
+                <strong>Step 3:</strong> User authorizes via Azure OAuth
+            </div>
+            <div class="step">
+                <strong>Step 4:</strong> Exchange authorization code for access token
+            </div>
+            <div class="step">
+                <strong>Step 5:</strong> Use access token for MCP requests
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="section">
+                <h3>🔍 Step 1: Server Discovery</h3>
+                <button onclick="discoverMetadata()">Discover OAuth Metadata</button>
+                <div id="metadata-result"></div>
+            </div>
+
+            <div class="section">
+                <h3>📝 Step 2: Client Registration</h3>
+                <button onclick="registerClient()">Register MCP Client</button>
+                <div id="registration-result"></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>🔑 Step 3: Authorization Flow</h3>
+            <div class="grid">
+                <div>
+                    <label>Client ID:</label>
+                    <input type="text" id="client-id" placeholder="Will be filled after registration">
+                    <label>Redirect URI:</label>
+                    <input type="text" id="redirect-uri" value="http://localhost:3000/callback" placeholder="Your app's callback URL">
+                </div>
+                <div>
+                    <button onclick="generatePKCE()">Generate PKCE Parameters</button>
+                    <button onclick="startAuthorization()">Start Authorization</button>
+                </div>
+            </div>
+            <div id="pkce-result"></div>
+            <div id="auth-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>🎫 Step 4: Token Exchange</h3>
+            <div class="grid">
+                <div>
+                    <label>Authorization Code:</label>
+                    <input type="text" id="auth-code" placeholder="From callback URL">
+                    <label>Code Verifier:</label>
+                    <input type="text" id="code-verifier" placeholder="From PKCE generation">
+                </div>
+                <div>
+                    <button onclick="exchangeToken()">Exchange for Token</button>
+                </div>
+            </div>
+            <div id="token-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>🧪 Step 5: Test MCP Requests</h3>
+            <div class="grid">
+                <div>
+                    <label>Access Token:</label>
+                    <input type="text" id="access-token" placeholder="From token exchange">
+                </div>
+                <div>
+                    <button onclick="testInitialize()">Test Initialize</button>
+                    <button onclick="testListTools()">Test List Tools</button>
+                    <button onclick="testWeatherAlert()">Test Weather Alert</button>
+                </div>
+            </div>
+            <div id="mcp-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>📚 Implementation Guide</h3>
+            <div class="step">
+                <strong>For MCP Clients:</strong> Use the endpoints discovered above to implement OAuth 2.1 flow with PKCE
+            </div>
+            <div class="step">
+                <strong>Protocol Version:</strong> Include <code>MCP-Protocol-Version: 2024-11-05</code> header
+            </div>
+            <div class="step">
+                <strong>PKCE Required:</strong> All clients must use PKCE (S256 method) for security
+            </div>
+            <div class="step">
+                <strong>Dynamic Registration:</strong> Clients can register automatically without manual setup
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let clientData = {};
+        let pkceData = {};
+
+        // Utility functions
+        function log(elementId, content, type = 'info') {
+            const element = document.getElementById(elementId);
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
+            element.innerHTML = `<div class="step ${className}">${content}</div>`;
+        }
+
+        function generateCodeVerifier() {
+            const array = new Uint8Array(32);
+            crypto.getRandomValues(array);
+            return btoa(String.fromCharCode.apply(null, array))
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
+
+        async function generateCodeChallenge(verifier) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(verifier);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return btoa(String.fromCharCode.apply(null, new Uint8Array(digest)))
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
+
+        // Step 1: Discover server metadata
+        async function discoverMetadata() {
+            try {
+                const response = await fetch('/.well-known/oauth-authorization-server', {
+                    headers: {
+                        'MCP-Protocol-Version': '2024-11-05'
+                    }
+                });
+                const metadata = await response.json();
+                
+                log('metadata-result', `
+                    <strong>✅ Server Metadata Discovered:</strong><br>
+                    <div class="code">${JSON.stringify(metadata, null, 2)}</div>
+                `, 'success');
+                
+                return metadata;
+            } catch (error) {
+                log('metadata-result', `❌ Discovery failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Step 2: Register client
+        async function registerClient() {
+            try {
+                const registrationData = {
+                    redirect_uris: [document.getElementById('redirect-uri').value],
+                    client_name: "MCP Test Client",
+                    grant_types: ["authorization_code"],
+                    response_types: ["code"],
+                    token_endpoint_auth_method: "none"
+                };
+
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'MCP-Protocol-Version': '2024-11-05'
+                    },
+                    body: JSON.stringify(registrationData)
+                });
+
+                const result = await response.json();
+                clientData = result;
+                
+                document.getElementById('client-id').value = result.client_id;
+                
+                log('registration-result', `
+                    <strong>✅ Client Registered:</strong><br>
+                    <strong>Client ID:</strong> ${result.client_id}<br>
+                    <div class="code">${JSON.stringify(result, null, 2)}</div>
+                `, 'success');
+                
+            } catch (error) {
+                log('registration-result', `❌ Registration failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Step 3a: Generate PKCE parameters
+        async function generatePKCE() {
+            try {
+                const codeVerifier = generateCodeVerifier();
+                const codeChallenge = await generateCodeChallenge(codeVerifier);
+                
+                pkceData = {
+                    code_verifier: codeVerifier,
+                    code_challenge: codeChallenge,
+                    code_challenge_method: 'S256'
+                };
+                
+                document.getElementById('code-verifier').value = codeVerifier;
+                
+                log('pkce-result', `
+                    <strong>✅ PKCE Parameters Generated:</strong><br>
+                    <strong>Code Verifier:</strong> ${codeVerifier}<br>
+                    <strong>Code Challenge:</strong> ${codeChallenge}<br>
+                    <strong>Method:</strong> S256
+                `, 'success');
+                
+            } catch (error) {
+                log('pkce-result', `❌ PKCE generation failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Step 3b: Start authorization
+        function startAuthorization() {
+            const clientId = document.getElementById('client-id').value;
+            const redirectUri = document.getElementById('redirect-uri').value;
+            
+            if (!clientId || !pkceData.code_challenge) {
+                log('auth-result', '❌ Please register client and generate PKCE first', 'error');
+                return;
+            }
+            
+            const params = new URLSearchParams({
+                response_type: 'code',
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                code_challenge: pkceData.code_challenge,
+                code_challenge_method: 'S256',
+                scope: 'openid profile email',
+                state: 'test-state-' + Math.random().toString(36).substr(2, 9)
+            });
+            
+            const authUrl = `/authorize?${params.toString()}`;
+            
+            log('auth-result', `
+                <strong>🚀 Authorization URL Created:</strong><br>
+                <a href="${authUrl}" target="_blank" style="color: #2196F3;">Click here to authorize</a><br>
+                <div class="code">${authUrl}</div>
+                <br><strong>Instructions:</strong>
+                <ol>
+                    <li>Click the link above</li>
+                    <li>Complete Azure OAuth login</li>
+                    <li>Copy the authorization code from the callback URL</li>
+                    <li>Paste it below to exchange for token</li>
+                </ol>
+            `, 'warning');
+        }
+
+        // Step 4: Exchange authorization code for token
+        async function exchangeToken() {
+            try {
+                const authCode = document.getElementById('auth-code').value;
+                const codeVerifier = document.getElementById('code-verifier').value;
+                const clientId = document.getElementById('client-id').value;
+                const redirectUri = document.getElementById('redirect-uri').value;
+                
+                if (!authCode || !codeVerifier || !clientId) {
+                    log('token-result', '❌ Please fill in all required fields', 'error');
+                    return;
+                }
+                
+                const formData = new FormData();
+                formData.append('grant_type', 'authorization_code');
+                formData.append('code', authCode);
+                formData.append('redirect_uri', redirectUri);
+                formData.append('client_id', clientId);
+                formData.append('code_verifier', codeVerifier);
+                
+                const response = await fetch('/token', {
+                    method: 'POST',
+                    headers: {
+                        'MCP-Protocol-Version': '2024-11-05'
+                    },
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('access-token').value = result.access_token;
+                    
+                    log('token-result', `
+                        <strong>✅ Token Exchange Successful:</strong><br>
+                        <strong>Access Token:</strong> ${result.access_token.substring(0, 50)}...<br>
+                        <strong>Expires In:</strong> ${result.expires_in} seconds<br>
+                        <div class="code">${JSON.stringify(result, null, 2)}</div>
+                    `, 'success');
+                } else {
+                    log('token-result', `❌ Token exchange failed: ${JSON.stringify(result)}`, 'error');
+                }
+                
+            } catch (error) {
+                log('token-result', `❌ Token exchange failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Step 5: Test MCP requests
+        async function testMCP(method, params = {}) {
+            const token = document.getElementById('access-token').value;
+            
+            if (!token) {
+                log('mcp-result', '❌ Please obtain access token first', 'error');
+                return;
+            }
+            
+            try {
+                const message = {
+                    jsonrpc: "2.0",
+                    id: Date.now(),
+                    method: method,
+                    params: params
+                };
+                
+                const response = await fetch('/mcp/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                        'MCP-Protocol-Version': '2024-11-05'
+                    },
+                    body: JSON.stringify(message)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    log('mcp-result', `
+                        <strong>✅ MCP ${method} Success:</strong><br>
+                        <div class="code">${JSON.stringify(result, null, 2)}</div>
+                    `, 'success');
+                } else {
+                    log('mcp-result', `❌ MCP ${method} failed: ${JSON.stringify(result)}`, 'error');
+                }
+                
+            } catch (error) {
+                log('mcp-result', `❌ MCP ${method} failed: ${error.message}`, 'error');
+            }
+        }
+
+        function testInitialize() {
+            testMCP('initialize', {
+                protocolVersion: '2024-11-05',
+                capabilities: {},
+                clientInfo: {
+                    name: 'mcp-test-client',
+                    version: '1.0.0'
+                }
+            });
+        }
+
+        function testListTools() {
+            testMCP('tools/list', {});
+        }
+
+        function testWeatherAlert() {
+            testMCP('tools/call', {
+                name: 'get_alerts',
+                arguments: {
+                    state: 'CA'
+                }
+            });
+        }
+
+        // Initialize page
+        window.onload = function() {
+            generatePKCE();
+        };
+    </script>
+</body>
+</html>

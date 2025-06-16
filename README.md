@@ -1,38 +1,49 @@
-# Python MCP Weather Server with Azure OAuth Authentication
+# Python MCP Weather Server with OAuth 2.1 Authentication
 
-A Model Context Protocol (MCP) server built with FastAPI and Python that provides weather information using the National Weather Service API. Features Azure OAuth 2.0 authentication and is ready for deployment to Azure App Service with Azure Developer CLI (azd).
+A production-ready Model Context Protocol (MCP) server built with FastAPI that provides weather information using the National Weather Service API. Features **full MCP OAuth 2.1 compliance** with PKCE, dynamic client registration, and Azure AD integration. Ready for deployment to Azure App Service with Azure Developer CLI (azd).
 
 ## 🌟 Features
 
-- **FastAPI Framework**: Modern, fast web framework for building APIs
-- **Azure OAuth 2.0 Authentication**: Secure authentication using Microsoft Entra ID
-- **MCP Protocol Compliance**: Full support for JSON-RPC 2.0 MCP protocol  
-- **HTTP Transport**: HTTP-based communication for web connectivity
-- **JWT Token Management**: Secure token-based authentication and authorization
+- **MCP OAuth 2.1 Specification Compliant**: Complete implementation of MCP Authorization Specification (2025-03-26)
+- **PKCE Required**: Secure authorization with Proof Key for Code Exchange (RFC 7636, S256 method)
+- **Dynamic Client Registration**: Automatic client registration per RFC 7591
+- **Authorization Server Metadata**: Discovery endpoint per RFC 8414
+- **Third-Party Authorization**: Uses Azure AD as authorization server
+- **MCP Protocol Headers**: Full support for `MCP-Protocol-Version: 2025-03-26`
+- **JWT Token Management**: Secure token-based authentication
 - **Weather Tools**:
   - `get_alerts`: Get weather alerts for any US state
   - `get_forecast`: Get detailed weather forecast for any location
 - **Azure Ready**: Pre-configured for Azure App Service deployment
-- **Web Test Interface**: Built-in HTML interface for testing authentication and tools
-- **National Weather Service API**: Real-time weather data from official US government source
+- **Web Test Interface**: Built-in OAuth 2.1 flow testing
 
-## 🔐 Authentication
+## 🔐 MCP Authorization Implementation
 
-This server requires Azure OAuth 2.0 authentication. All MCP endpoints are protected and require a valid JWT token.
+This server implements the complete [MCP Authorization Specification (2025-03-26)](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization):
 
-**⚠️ Important**: Before running locally or deploying, you must complete the OAuth setup. See [AUTH_SETUP.md](AUTH_SETUP.md) for detailed instructions on:
-- Creating an Azure App Registration
-- Configuring client secrets and permissions
-- Setting up redirect URIs for both local and production environments
+### OAuth 2.1 Endpoints
+- `GET /.well-known/oauth-authorization-server` - Authorization server metadata (RFC 8414)
+- `POST /register` - Dynamic client registration (RFC 7591) 
+- `GET /authorize` - Authorization endpoint with PKCE (RFC 7636)
+- `POST /token` - Token endpoint for code exchange and refresh
+- `GET /auth/azure/callback` - Third-party authorization callback
+
+### MCP Protocol Features  
+- ✅ **Protocol Version Headers**: `MCP-Protocol-Version: 2025-03-26`
+- ✅ **PKCE Required**: All clients must use S256 method
+- ✅ **Dynamic Registration**: Automatic client onboarding
+- ✅ **JWT Authentication**: Bearer token validation on MCP endpoints
+- ✅ **Proper Error Handling**: 401/403/400 responses with details
+- ✅ **Azure AD Integration**: Enterprise-grade authorization server
+
+**⚠️ Important**: Complete OAuth setup required before use. See [AUTH_SETUP.md](AUTH_SETUP.md) for Azure AD configuration instructions.
 
 ## 💻 Local Development
 
 ### Prerequisites
 
 - Python 3.8+
-- pip (Python package installer)
-- Azure account (for OAuth setup)
-- **Completed OAuth setup** (see [AUTH_SETUP.md](AUTH_SETUP.md))
+- Azure account with completed OAuth setup (see [AUTH_SETUP.md](AUTH_SETUP.md))
 
 ### Setup & Run
 
@@ -91,6 +102,8 @@ Before connecting any MCP client, you must authenticate:
    - Set transport type to `HTTP`
    - Set URL to: `http://localhost:8000/`
    - **Add Authorization header**: `Bearer <your-jwt-token>`
+   
+   > 💡 **Getting your JWT token**: Visit http://localhost:8000/test-auth to complete the OAuth 2.1 flow and obtain your JWT token.
 
 4. **Test the connection**: List Tools, click on a tool, and Run Tool
 
@@ -113,6 +126,8 @@ Before connecting any MCP client, you must authenticate:
   }
 }
 ```
+
+> 💡 **Replace `<your-jwt-token>`** with the actual JWT token obtained from the OAuth 2.1 flow at `/test-auth`.
 
 ## 🚀 Quick Deploy to Azure
 
@@ -185,15 +200,18 @@ Follow the same guidance as the local setup, but use your Azure App Service URL 
 
 ## 🧪 Testing
 
-- **Local**: Visit http://localhost:8000/test-auth for an interactive authentication and testing interface
-- **Azure**: Visit `https://<your-app>.azurewebsites.net/test-auth` for your deployed instance
+### Interactive OAuth 2.1 Testing
+- **Local**: Visit http://localhost:8000/test-auth
+- **Azure**: Visit `https://<your-app>.azurewebsites.net/test-auth`
 
-The test interface allows you to:
-1. Login with Microsoft OAuth
-2. View your JWT token and user information  
-3. Test authenticated MCP endpoints
-4. Try weather tools with sample data
+The test interface provides:
+1. **Complete OAuth 2.1 Flow**: Dynamic client registration → Authorization → Token exchange
+2. **PKCE Validation**: Test the full Proof Key for Code Exchange flow
+3. **MCP Endpoint Testing**: Test authenticated weather tools
+4. **JWT Token Display**: View and validate your authentication tokens
 
+### MCP Client Testing
+Test with any MCP-compatible client using the authenticated endpoints and your JWT token.
 
 ## 🌦️ Data Source
 
@@ -206,9 +224,11 @@ This server uses the National Weather Service (NWS) API:
 
 ## 🔒 Security Features
 
-- ✅ Azure OAuth 2.0 integration with Microsoft Entra ID
-- ✅ JWT tokens with configurable expiration (24 hours default)
-- ✅ Secure token validation on all protected endpoints
-- ✅ User information retrieval from Microsoft Graph API
-- ✅ Request logging with user identification
-- ✅ CORS protection and HTTPS enforcement
+- ✅ **OAuth 2.1 Compliance**: Full MCP Authorization Specification implementation
+- ✅ **PKCE Required**: S256 method for all authorization flows
+- ✅ **Dynamic Client Registration**: Secure automatic client onboarding
+- ✅ **Azure AD Integration**: Enterprise-grade authorization server
+- ✅ **JWT Token Security**: Configurable expiration and secure validation
+- ✅ **Protocol Version Enforcement**: MCP-Protocol-Version header validation
+- ✅ **Request Logging**: Full audit trail with user identification
+- ✅ **CORS Protection**: Proper cross-origin resource sharing policies
