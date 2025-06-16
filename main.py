@@ -455,16 +455,70 @@ async def authorize(
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/auth/azure/callback")
-async def azure_callback(code: str, state: str):
+async def azure_callback(request: Request):
     """Handle Azure OAuth callback (third-party authorization)"""
     try:
+        # Get query parameters manually to handle optional state
+        code = request.query_params.get("code")
+        state = request.query_params.get("state")
+        error = request.query_params.get("error")
+        error_description = request.query_params.get("error_description")
+        
+        logger.info(f"Azure callback received - code: {code[:20] if code else 'None'}..., state: {state[:20] if state else 'None'}...")
+        logger.info(f"All query params: {dict(request.query_params)}")
+        
+        # Handle OAuth error responses
+        if error:
+            logger.error(f"Azure OAuth error: {error} - {error_description}")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "oauth_error",
+                    "detail": f"Azure OAuth error: {error}",
+                    "error_description": error_description
+                }
+            )
+        
+        # Check for required code parameter
+        if not code:
+            logger.error("Azure callback missing code parameter")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "missing_code_parameter",
+                    "detail": "Authorization code is required for OAuth callback"
+                }
+            )
+        
+        # Handle case where state might be missing
+        if not state:
+            logger.error("Azure callback missing state parameter")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "missing_state_parameter",
+                    "detail": "State parameter is required for OAuth callback",
+                    "code_preview": code[:20] + "..." if code else None
+                }
+            )
+        
         # Process Azure callback and redirect to original client
         redirect_url = await mcp_auth.handle_azure_callback(code, state)
+        logger.info(f"Redirecting to: {redirect_url}")
         return RedirectResponse(url=redirect_url)
         
     except Exception as e:
         logger.error(f"Azure callback failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        # Return more detailed error for debugging
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "azure_callback_failed",
+                "detail": str(e),
+                "state": state,
+                "code_preview": code[:20] + "..." if code else None
+            }
+        )
 
 @app.post("/token", response_model=TokenResponse)
 async def token_endpoint(
@@ -522,6 +576,45 @@ async def test_auth_page():
 async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get current user information"""
     return {"user": current_user}
+
+# Test client callback endpoint (for testing OAuth flow)
+@app.get("/client-callback")
+async def client_callback(request: Request):
+    """Test client callback endpoint to receive authorization codes"""
+    code = request.query_params.get("code")
+    state = request.query_params.get("state") 
+    error = request.query_params.get("error")
+    
+    logger.info(f"Client callback received - code: {code[:20] if code else 'None'}..., state: {state[:20] if state else 'None'}...")
+    
+    # Create a simple HTML response showing the results
+    if error:
+        html_content = f"""
+        <html>
+        <head><title>OAuth Error</title></head>
+        <body>
+            <h1>OAuth Authorization Error</h1>
+            <p><strong>Error:</strong> {error}</p>
+            <p><strong>State:</strong> {state}</p>
+            <a href="/mcp_oauth_test.html">Try Again</a>
+        </body>
+        </html>
+        """
+    else:
+        html_content = f"""
+        <html>
+        <head><title>OAuth Success</title></head>
+        <body>
+            <h1>OAuth Authorization Successful!</h1>
+            <p><strong>Authorization Code:</strong> {code}</p>
+            <p><strong>State:</strong> {state}</p>
+            <p>You can now exchange this authorization code for an access token.</p>
+            <a href="/mcp_oauth_test.html">Start New Flow</a>
+        </body>
+        </html>
+        """
+    
+    return HTMLResponse(content=html_content)
 
 # MCP Tool Endpoints (require authentication)
 @app.get("/tools")

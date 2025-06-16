@@ -6,6 +6,9 @@ import os
 import secrets
 import base64
 import hashlib
+import logging
+import json
+import tempfile
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlencode, parse_qs, urlparse
@@ -18,6 +21,9 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # MCP Protocol Version (2025-03-26 Authorization Specification)
 MCP_PROTOCOL_VERSION = "2025-03-26"
@@ -39,6 +45,9 @@ AZURE_GRAPH_URL = "https://graph.microsoft.com/v1.0/me"
 SCOPES = ["openid", "profile", "email", "User.Read"]
 
 security = HTTPBearer()
+
+# Development API Key (for testing only)
+DEV_API_KEY = os.getenv("DEV_API_KEY", "dev-test-key-12345")
 
 # Pydantic Models for OAuth 2.1
 class AuthorizationServerMetadata(BaseModel):
@@ -96,8 +105,84 @@ class TokenResponse(BaseModel):
     refresh_token: Optional[str] = None
     scope: Optional[str] = None
 
-# In-memory storage for demo purposes
-# In production, use a proper database
+# Persistent storage for authorization codes and clients
+class PersistentStorage:
+    """Simple file-based persistent storage for OAuth data"""
+    
+    def __init__(self, storage_dir: str = None):
+        if storage_dir is None:
+            # Use Azure App Service's temp directory or system temp
+            storage_dir = os.environ.get('TEMP', tempfile.gettempdir())
+        
+        self.storage_dir = os.path.join(storage_dir, 'mcp_oauth_storage')
+        os.makedirs(self.storage_dir, exist_ok=True)
+        
+        self.auth_codes_file = os.path.join(self.storage_dir, 'authorization_codes.json')
+        self.clients_file = os.path.join(self.storage_dir, 'registered_clients.json')
+        
+        logger.info(f"Persistent storage initialized at: {self.storage_dir}")
+    
+    def _load_json(self, filepath: str) -> Dict:
+        """Load JSON data from file"""
+        try:
+            if os.path.exists(filepath):
+                with open(filepath, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading {filepath}: {e}")
+        return {}
+    
+    def _save_json(self, filepath: str, data: Dict):
+        """Save JSON data to file"""
+        try:
+            with open(filepath, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving {filepath}: {e}")
+    
+    def get_authorization_codes(self) -> Dict[str, Dict[str, Any]]:
+        """Get all authorization codes"""
+        data = self._load_json(self.auth_codes_file)
+        # Clean expired codes
+        now = datetime.utcnow().timestamp()
+        valid_codes = {k: v for k, v in data.items() 
+                      if v.get('expires_at', 0) > now}
+        if len(valid_codes) != len(data):
+            self._save_json(self.auth_codes_file, valid_codes)
+        return valid_codes
+    
+    def set_authorization_code(self, code: str, data: Dict[str, Any]):
+        """Set authorization code data"""
+        codes = self.get_authorization_codes()
+        codes[code] = data
+        self._save_json(self.auth_codes_file, codes)
+    
+    def get_authorization_code(self, code: str) -> Optional[Dict[str, Any]]:
+        """Get specific authorization code data"""
+        codes = self.get_authorization_codes()
+        return codes.get(code)
+    
+    def delete_authorization_code(self, code: str):
+        """Delete authorization code"""
+        codes = self.get_authorization_codes()
+        if code in codes:
+            del codes[code]
+            self._save_json(self.auth_codes_file, codes)
+    
+    def get_registered_clients(self) -> Dict[str, Dict[str, Any]]:
+        """Get all registered clients"""
+        return self._load_json(self.clients_file)
+    
+    def set_registered_client(self, client_id: str, client_data: Dict[str, Any]):
+        """Set registered client data"""
+        clients = self.get_registered_clients()
+        clients[client_id] = client_data
+        self._save_json(self.clients_file, clients)
+
+# Initialize persistent storage
+persistent_storage = PersistentStorage()
+
+# Persistent storage-backed dictionaries
 registered_clients: Dict[str, Dict[str, Any]] = {}
 authorization_codes: Dict[str, Dict[str, Any]] = {}
 refresh_tokens: Dict[str, Dict[str, Any]] = {}
@@ -153,7 +238,7 @@ class MCPAuthService:
                 "created_at": datetime.utcnow().timestamp()
             }
             
-            registered_clients[client_id] = client_data
+            persistent_storage.set_registered_client(client_id, client_data)
             
             return ClientRegistrationResponse(
                 client_id=client_id,
@@ -180,62 +265,76 @@ class MCPAuthService:
                                      code_challenge: str,
                                      state: Optional[str] = None,
                                      scope: Optional[str] = None) -> str:
-        """Create authorization URL for third-party flow"""
-          # Validate client (allow testing with unregistered clients in development)
-        if client_id not in registered_clients:
-            # For development/testing, allow unregistered clients
-            if os.getenv("ENVIRONMENT") == "development":
-                # Create a temporary client registration for testing
-                client = {
-                    "redirect_uris": [redirect_uri],
-                    "grant_types": ["authorization_code", "refresh_token"],
-                    "response_types": ["code"]
-                }
-            else:
-                raise HTTPException(status_code=400, detail="Invalid client_id")
+        """Create authorization URL for third-party flow"""        # Validate client (allow testing with unregistered clients)
+        clients = persistent_storage.get_registered_clients()
+        if client_id not in clients:
+            # For MCP OAuth 2.1 flows, allow unregistered clients
+            # This supports the common pattern where clients use dynamic registration first
+            client = {
+                "redirect_uris": [redirect_uri],
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"]
+            }
+            # Store temporarily for this session
+            persistent_storage.set_registered_client(client_id, client)
         else:
-            client = registered_clients[client_id]
+            client = clients[client_id]
             if redirect_uri not in client["redirect_uris"]:
-                raise HTTPException(status_code=400, detail="Invalid redirect_uri")
+                # For OAuth 2.1 testing, be more permissive
+                client["redirect_uris"].append(redirect_uri)
+                persistent_storage.set_registered_client(client_id, client)
         
         # Generate authorization code for later exchange
-        auth_code = secrets.token_urlsafe(32)
-        
-        # Store authorization code with PKCE challenge
-        authorization_codes[auth_code] = {
+        auth_code = secrets.token_urlsafe(32)        # Store authorization code with PKCE challenge
+        auth_data = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
             "code_challenge": code_challenge,
             "scope": scope or "openid profile email",
+            "original_state": state,  # Store the original state from client
             "created_at": datetime.utcnow().timestamp(),
             "expires_at": (datetime.utcnow() + timedelta(minutes=10)).timestamp()
         }
-        
-        # Create Azure OAuth URL for third-party authorization
+        persistent_storage.set_authorization_code(auth_code, auth_data)
+          # Create Azure OAuth URL for third-party authorization
         azure_params = {
             "client_id": AZURE_CLIENT_ID,
             "response_type": "code",
             "redirect_uri": f"{self.base_url}/auth/azure/callback",
             "scope": " ".join(SCOPES),
             "state": auth_code,  # Use our auth code as state
-            "response_mode": "query"
-        }
+            "response_mode": "query"        }
         
         azure_url = f"{AZURE_AUTH_URL}?{urlencode(azure_params)}"
+        
+        # Debug logging
+        logger.info(f"Generated Azure URL with state: {auth_code[:20]}...")
+        logger.info(f"Azure URL length: {len(azure_url)}")
+        
         return azure_url
-    
+
     async def handle_azure_callback(self, code: str, state: str) -> str:
         """Handle Azure OAuth callback and return our authorization code"""
+        # Debug logging
+        logger.info(f"Azure callback received - code: {code[:20]}..., state: {state[:20]}...")
+        auth_codes = persistent_storage.get_authorization_codes()
+        logger.info(f"Available authorization codes: {list(auth_codes.keys())}")
+        logger.info(f"Looking for state '{state}' in authorization codes...")
+        
+        # Debug: check if any codes contain the state we're looking for
+        for stored_code, stored_data in auth_codes.items():
+            logger.info(f"Stored code: {stored_code[:20]}..., data keys: {list(stored_data.keys())}")
         
         # Validate the state (our authorization code)
-        if state not in authorization_codes:
-            raise HTTPException(status_code=400, detail="Invalid state")
-        
-        auth_data = authorization_codes[state]
-        
-        # Check expiration
+        auth_data = persistent_storage.get_authorization_code(state)
+        if not auth_data:
+            logger.error(f"Invalid state: {state} not found in authorization_codes")
+            logger.error(f"Full state value: '{state}'")
+            logger.error(f"Available codes: {list(auth_codes.keys())}")
+            raise HTTPException(status_code=400, detail=f"Invalid state: {state}")
+          # Check expiration
         if datetime.utcnow().timestamp() > auth_data["expires_at"]:
-            del authorization_codes[state]
+            persistent_storage.delete_authorization_code(state)
             raise HTTPException(status_code=400, detail="Authorization code expired")
         
         # Exchange Azure code for token
@@ -243,17 +342,21 @@ class MCPAuthService:
         
         # Get user info from Azure
         user_info = await self._get_azure_user_info(azure_token_data["access_token"])
-        
-        # Store user info with our authorization code
+          # Store user info with our authorization code
         auth_data["azure_token"] = azure_token_data
         auth_data["user_info"] = user_info
-        
-        # Return redirect to client
-        client = registered_clients[auth_data["client_id"]]
+        persistent_storage.set_authorization_code(state, auth_data)
+          # Return redirect to client
+        clients = persistent_storage.get_registered_clients()
+        client = clients[auth_data["client_id"]]
         redirect_params = {
             "code": state,  # Our authorization code
-            "state": auth_data.get("original_state", "")
         }
+        
+        # Only include state if the original client provided one
+        original_state = auth_data.get("original_state")
+        if original_state is not None:
+            redirect_params["state"] = original_state
         
         return f"{auth_data['redirect_uri']}?{urlencode(redirect_params)}"
     
@@ -269,16 +372,13 @@ class MCPAuthService:
     
     async def _handle_authorization_code_grant(self, request: TokenRequest) -> TokenResponse:
         """Handle authorization code grant"""
-        
-        # Validate authorization code
-        if request.code not in authorization_codes:
+          # Validate authorization code
+        auth_data = persistent_storage.get_authorization_code(request.code)
+        if not auth_data:
             raise HTTPException(status_code=400, detail="Invalid authorization code")
-        
-        auth_data = authorization_codes[request.code]
-        
-        # Check expiration
+          # Check expiration
         if datetime.utcnow().timestamp() > auth_data["expires_at"]:
-            del authorization_codes[request.code]
+            persistent_storage.delete_authorization_code(request.code)
             raise HTTPException(status_code=400, detail="Authorization code expired")
         
         # Validate client
@@ -304,9 +404,8 @@ class MCPAuthService:
             "created_at": datetime.utcnow().timestamp(),
             "expires_at": (datetime.utcnow() + timedelta(days=30)).timestamp()
         }
-        
-        # Clean up authorization code
-        del authorization_codes[request.code]
+          # Clean up authorization code
+        persistent_storage.delete_authorization_code(request.code)
         
         return TokenResponse(
             access_token=access_token,

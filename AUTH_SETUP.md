@@ -18,10 +18,9 @@ You'll need to create an Azure App Registration to enable OAuth authentication. 
 2. Navigate to **Microsoft Entra ID** > **App registrations** > **New registration**
 3. Fill in the details:
    - **Name**: Your MCP Server App (e.g., "MCP Weather Server")
-   - **Supported account types**: Accounts in this organizational directory only (or your preferred option)
-   - **Redirect URI**: 
-     - For local development: `http://localhost:8000/auth/callback`
-     - For production: `https://your-app-name.azurewebsites.net/auth/callback`
+   - **Supported account types**: Accounts in this organizational directory only (or your preferred option)   - **Redirect URI**: 
+     - For local development: `http://localhost:8000/auth/azure/callback`
+     - For production: `https://your-app-name.azurewebsites.net/auth/azure/callback`
 4. After creation, note down:
    - **Application (client) ID** (you'll need this)
    - **Directory (tenant) ID** (you'll need this)
@@ -45,15 +44,17 @@ You'll need to create an Azure App Registration to enable OAuth authentication. 
 
 ### 4. Configure Redirect URIs for Both Local and Production
 
-**Important**: For production deployment, you'll need to add both URIs:
+**Important**: You need to configure the Azure callback URI (where Azure will send auth codes):
 
 1. Go to **Authentication** 
 2. Under **Web** platform, ensure you have:
-   - `http://localhost:8000/auth/callback` (for local development)
-   - `https://your-deployed-app.azurewebsites.net/auth/callback` (for production)
+   - `http://localhost:8000/auth/azure/callback` (for local development)
+   - `https://your-deployed-app.azurewebsites.net/auth/azure/callback` (for production)
 3. Click **Save**
 
-**Note**: After deploying to Azure, you'll get a URL like `https://app-web-xyz123.azurewebsites.net/`. You'll need to add `/auth/callback` to this URL in your Azure App Registration.
+**Note**: This is where Azure sends the authorization code. It's different from your client's callback URI, which is configured in your OAuth client application.
+
+**Note**: After deploying to Azure, you'll get a URL like `https://app-web-xyz123.azurewebsites.net/`. You'll need to add `/auth/azure/callback` to this URL in your Azure App Registration.
 
 ## Environment Configuration
 
@@ -66,10 +67,9 @@ You'll need to create an Azure App Registration to enable OAuth authentication. 
 
 2. Update the `.env` file with your Azure app details:
    ```
-   AZURE_CLIENT_ID=your-actual-client-id-from-step-1
-   AZURE_CLIENT_SECRET=your-actual-client-secret-from-step-2
+   AZURE_CLIENT_ID=your-actual-client-id-from-step-1   AZURE_CLIENT_SECRET=your-actual-client-secret-from-step-2
    AZURE_TENANT_ID=your-actual-tenant-id-from-step-1
-   AZURE_REDIRECT_URI=http://localhost:8000/auth/callback
+   AZURE_REDIRECT_URI=http://localhost:8000/auth/azure/callback
    JWT_SECRET_KEY=generate-a-secure-random-key-for-jwt-signing
    ```
 
@@ -97,7 +97,7 @@ After deploying to Azure (using the steps in README.md), you **must** update you
 3. **Click Authentication** in the left sidebar
 4. **Add the production redirect URI**:
    - Click "Add URI" under Web platform
-   - Enter: `https://your-app-name.azurewebsites.net/auth/callback`
+   - Enter: `https://your-app-name.azurewebsites.net/auth/azure/callback`
    - Click **Save**
 
 ## Troubleshooting OAuth Issues
@@ -108,10 +108,13 @@ After deploying to Azure (using the steps in README.md), you **must** update you
    - Check your `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET`
    - Ensure the client secret hasn't expired (check Azure Portal)
 
-2. **"Redirect URI mismatch"**
-   - Verify the redirect URI in Azure matches exactly
-   - Local: `http://localhost:8000/auth/callback`
-   - Production: `https://your-app-name.azurewebsites.net/auth/callback`
+2. **"Redirect URI mismatch"**   
+   - Verify the Azure callback URI in Azure App Registration matches exactly:
+     - Local: `http://localhost:8000/auth/azure/callback`
+     - Production: `https://your-app-name.azurewebsites.net/auth/azure/callback`
+   - **Important**: Don't confuse Azure callback URI with your OAuth client's callback URI
+   - The Azure callback is where Azure sends auth codes to our server
+   - Your OAuth client callback is where our server sends authorization codes to your client
 
 3. **"Insufficient privileges" error**
    - Make sure you've granted admin consent for the required permissions
@@ -132,14 +135,25 @@ Set `ENVIRONMENT=development` in your `.env` file for detailed logging of OAuth 
 
 ### Testing OAuth Flow
 
-1. **Local Testing**: Visit `http://localhost:8000/test-auth`
-2. **Production Testing**: Visit `https://your-app-name.azurewebsites.net/test-auth`
+1. **Local Testing**: Visit `http://localhost:8000/mcp_oauth_test.html`
+2. **Production Testing**: Visit `https://your-app-name.azurewebsites.net/mcp_oauth_test.html`
 
 The test interface will show you:
-- OAuth login URL
-- JWT token details
-- User information from Microsoft Graph
-- Protected endpoint testing
+- Complete OAuth 2.1 flow with dynamic client registration
+- PKCE code challenge/verifier generation
+- Azure AD authentication and consent
+- Authorization code exchange for JWT tokens
+- Protected MCP endpoint testing
+
+### OAuth Flow Architecture
+
+Understanding the redirect URIs:
+
+1. **Azure Callback URI**: `/auth/azure/callback` - Where Azure sends auth codes (configured in Azure App Registration)
+2. **Client Callback URI**: `/client-callback` (or your app's URI) - Where our server sends authorization codes to your client
+3. **OAuth Client Registration**: Clients register with their own callback URI during dynamic registration
+
+This separation allows multiple OAuth clients to use the same MCP server with different callback endpoints.
 
 ## Security Best Practices
 

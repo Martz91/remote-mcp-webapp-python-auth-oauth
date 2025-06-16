@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,17 +13,20 @@
             padding: 20px;
             background-color: #f5f5f5;
         }
+
         .container {
             background: white;
             padding: 30px;
             border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
+
         .header {
             text-align: center;
             color: #333;
             margin-bottom: 30px;
         }
+
         .section {
             margin: 20px 0;
             padding: 20px;
@@ -30,6 +34,7 @@
             border-radius: 5px;
             background-color: #fafafa;
         }
+
         .step {
             margin: 15px 0;
             padding: 15px;
@@ -37,21 +42,25 @@
             border-radius: 5px;
             border-left: 4px solid #2196F3;
         }
+
         .success {
             color: #4CAF50;
             background: #e8f5e8;
             border-left-color: #4CAF50;
         }
+
         .error {
             color: #f44336;
             background: #ffeaea;
             border-left-color: #f44336;
         }
+
         .warning {
             color: #ff9800;
             background: #fff3e0;
             border-left-color: #ff9800;
         }
+
         button {
             background: #2196F3;
             color: white;
@@ -61,14 +70,18 @@
             cursor: pointer;
             margin: 5px;
         }
+
         button:hover {
             background: #1976D2;
         }
+
         button:disabled {
             background: #ccc;
             cursor: not-allowed;
         }
-        input, textarea {
+
+        input,
+        textarea {
             width: 100%;
             padding: 8px;
             margin: 5px 0;
@@ -76,6 +89,7 @@
             border-radius: 4px;
             box-sizing: border-box;
         }
+
         .code {
             background: #f4f4f4;
             padding: 10px;
@@ -84,11 +98,13 @@
             white-space: pre-wrap;
             word-break: break-all;
         }
+
         .grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
         }
+
         @media (max-width: 768px) {
             .grid {
                 grid-template-columns: 1fr;
@@ -96,6 +112,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -139,11 +156,10 @@
         <div class="section">
             <h3>🔑 Step 3: Authorization Flow</h3>
             <div class="grid">
-                <div>
-                    <label>Client ID:</label>
+                <div> <label>Client ID:</label>
                     <input type="text" id="client-id" placeholder="Will be filled after registration">
                     <label>Redirect URI:</label>
-                    <input type="text" id="redirect-uri" value="http://localhost:3000/callback" placeholder="Your app's callback URL">
+                    <input type="text" id="redirect-uri" placeholder="Your app's callback URL">
                 </div>
                 <div>
                     <button onclick="generatePKCE()">Generate PKCE Parameters</button>
@@ -189,7 +205,8 @@
         <div class="section">
             <h3>📚 Implementation Guide</h3>
             <div class="step">
-                <strong>For MCP Clients:</strong> Use the endpoints discovered above to implement OAuth 2.1 flow with PKCE
+                <strong>For MCP Clients:</strong> Use the endpoints discovered above to implement OAuth 2.1 flow with
+                PKCE
             </div>
             <div class="step">
                 <strong>Protocol Version:</strong> Include <code>MCP-Protocol-Version: 2024-11-05</code> header
@@ -242,12 +259,12 @@
                     }
                 });
                 const metadata = await response.json();
-                
+
                 log('metadata-result', `
                     <strong>✅ Server Metadata Discovered:</strong><br>
                     <div class="code">${JSON.stringify(metadata, null, 2)}</div>
                 `, 'success');
-                
+
                 return metadata;
             } catch (error) {
                 log('metadata-result', `❌ Discovery failed: ${error.message}`, 'error');
@@ -276,15 +293,15 @@
 
                 const result = await response.json();
                 clientData = result;
-                
+
                 document.getElementById('client-id').value = result.client_id;
-                
+
                 log('registration-result', `
                     <strong>✅ Client Registered:</strong><br>
                     <strong>Client ID:</strong> ${result.client_id}<br>
                     <div class="code">${JSON.stringify(result, null, 2)}</div>
                 `, 'success');
-                
+
             } catch (error) {
                 log('registration-result', `❌ Registration failed: ${error.message}`, 'error');
             }
@@ -295,22 +312,22 @@
             try {
                 const codeVerifier = generateCodeVerifier();
                 const codeChallenge = await generateCodeChallenge(codeVerifier);
-                
+
                 pkceData = {
                     code_verifier: codeVerifier,
                     code_challenge: codeChallenge,
                     code_challenge_method: 'S256'
                 };
-                
+
                 document.getElementById('code-verifier').value = codeVerifier;
-                
+
                 log('pkce-result', `
                     <strong>✅ PKCE Parameters Generated:</strong><br>
                     <strong>Code Verifier:</strong> ${codeVerifier}<br>
                     <strong>Code Challenge:</strong> ${codeChallenge}<br>
                     <strong>Method:</strong> S256
                 `, 'success');
-                
+
             } catch (error) {
                 log('pkce-result', `❌ PKCE generation failed: ${error.message}`, 'error');
             }
@@ -320,34 +337,33 @@
         function startAuthorization() {
             const clientId = document.getElementById('client-id').value;
             const redirectUri = document.getElementById('redirect-uri').value;
-            
+
             if (!clientId || !pkceData.code_challenge) {
                 log('auth-result', '❌ Please register client and generate PKCE first', 'error');
                 return;
-            }
-            
-            const params = new URLSearchParams({
+            }            const params = new URLSearchParams({
                 response_type: 'code',
                 client_id: clientId,
                 redirect_uri: redirectUri,
                 code_challenge: pkceData.code_challenge,
                 code_challenge_method: 'S256',
-                scope: 'openid profile email',
-                state: 'test-state-' + Math.random().toString(36).substr(2, 9)
+                scope: 'openid profile email'
+                // Note: State parameter is handled by the server for Azure OAuth flow
             });
-            
+
             const authUrl = `/authorize?${params.toString()}`;
-            
+
             log('auth-result', `
                 <strong>🚀 Authorization URL Created:</strong><br>
                 <a href="${authUrl}" target="_blank" style="color: #2196F3;">Click here to authorize</a><br>
-                <div class="code">${authUrl}</div>
-                <br><strong>Instructions:</strong>
+                <div class="code">${authUrl}</div>                <br><strong>Instructions:</strong>
                 <ol>
-                    <li>Click the link above</li>
+                    <li>Click the link above to start OAuth flow</li>
                     <li>Complete Azure OAuth login</li>
-                    <li>Copy the authorization code from the callback URL</li>
-                    <li>Paste it below to exchange for token</li>
+                    <li>You'll be redirected back with the authorization code</li>
+                    <li>Copy the 'code' parameter from the callback URL</li>
+                    <li>Paste it below in the "Authorization Code" field</li>
+                    <li>Click "Exchange for Token" to complete the flow</li>
                 </ol>
             `, 'warning');
         }
@@ -359,19 +375,19 @@
                 const codeVerifier = document.getElementById('code-verifier').value;
                 const clientId = document.getElementById('client-id').value;
                 const redirectUri = document.getElementById('redirect-uri').value;
-                
+
                 if (!authCode || !codeVerifier || !clientId) {
                     log('token-result', '❌ Please fill in all required fields', 'error');
                     return;
                 }
-                
+
                 const formData = new FormData();
                 formData.append('grant_type', 'authorization_code');
                 formData.append('code', authCode);
                 formData.append('redirect_uri', redirectUri);
                 formData.append('client_id', clientId);
                 formData.append('code_verifier', codeVerifier);
-                
+
                 const response = await fetch('/token', {
                     method: 'POST',
                     headers: {
@@ -379,12 +395,12 @@
                     },
                     body: formData
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (response.ok) {
                     document.getElementById('access-token').value = result.access_token;
-                    
+
                     log('token-result', `
                         <strong>✅ Token Exchange Successful:</strong><br>
                         <strong>Access Token:</strong> ${result.access_token.substring(0, 50)}...<br>
@@ -394,7 +410,7 @@
                 } else {
                     log('token-result', `❌ Token exchange failed: ${JSON.stringify(result)}`, 'error');
                 }
-                
+
             } catch (error) {
                 log('token-result', `❌ Token exchange failed: ${error.message}`, 'error');
             }
@@ -403,12 +419,12 @@
         // Step 5: Test MCP requests
         async function testMCP(method, params = {}) {
             const token = document.getElementById('access-token').value;
-            
+
             if (!token) {
                 log('mcp-result', '❌ Please obtain access token first', 'error');
                 return;
             }
-            
+
             try {
                 const message = {
                     jsonrpc: "2.0",
@@ -416,7 +432,7 @@
                     method: method,
                     params: params
                 };
-                
+
                 const response = await fetch('/mcp/stream', {
                     method: 'POST',
                     headers: {
@@ -426,9 +442,9 @@
                     },
                     body: JSON.stringify(message)
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (response.ok) {
                     log('mcp-result', `
                         <strong>✅ MCP ${method} Success:</strong><br>
@@ -437,7 +453,7 @@
                 } else {
                     log('mcp-result', `❌ MCP ${method} failed: ${JSON.stringify(result)}`, 'error');
                 }
-                
+
             } catch (error) {
                 log('mcp-result', `❌ MCP ${method} failed: ${error.message}`, 'error');
             }
@@ -464,13 +480,16 @@
                 arguments: {
                     state: 'CA'
                 }
-            });
-        }
+            });        }        // Initialize page
+        window.onload = function () {
+            // Auto-populate redirect URI with current host
+            const currentHost = window.location.origin;
+            // Client should use its own callback endpoint, not the Azure callback
+            document.getElementById('redirect-uri').value = `${currentHost}/client-callback`;
 
-        // Initialize page
-        window.onload = function() {
             generatePKCE();
         };
     </script>
 </body>
+
 </html>

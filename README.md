@@ -76,7 +76,7 @@ This server implements the complete [MCP Authorization Specification (2025-03-26
 5. **Access the server**:
    - Server: http://localhost:8000/
    - Health Check: http://localhost:8000/health
-   - **Authentication Test**: http://localhost:8000/test-auth
+   - **OAuth 2.1 Test Interface**: http://localhost:8000/mcp_oauth_test.html
    - API Docs: http://localhost:8000/docs
 
 ## 🔌 Connect to the Local MCP Server
@@ -85,8 +85,8 @@ This server implements the complete [MCP Authorization Specification (2025-03-26
 
 Before connecting any MCP client, you must authenticate:
 
-1. **Get JWT Token**: Visit http://localhost:8000/test-auth
-2. **Login with Microsoft**: Complete the OAuth flow
+1. **Get JWT Token**: Visit http://localhost:8000/mcp_oauth_test.html
+2. **Complete OAuth Flow**: Use the built-in OAuth 2.1 test interface
 3. **Copy JWT Token**: Use the token in your MCP client configuration
 
 ### Using MCP Inspector
@@ -103,7 +103,7 @@ Before connecting any MCP client, you must authenticate:
    - Set URL to: `http://localhost:8000/`
    - **Add Authorization header**: `Bearer <your-jwt-token>`
    
-   > 💡 **Getting your JWT token**: Visit http://localhost:8000/test-auth to complete the OAuth 2.1 flow and obtain your JWT token.
+   > 💡 **Getting your JWT token**: Visit http://localhost:8000/mcp_oauth_test.html to complete the OAuth 2.1 flow and obtain your JWT token.
 
 4. **Test the connection**: List Tools, click on a tool, and Run Tool
 
@@ -125,9 +125,7 @@ Before connecting any MCP client, you must authenticate:
     }
   }
 }
-```
-
-> 💡 **Replace `<your-jwt-token>`** with the actual JWT token obtained from the OAuth 2.1 flow at `/test-auth`.
+```   > 💡 **Replace `<your-jwt-token>`** with the actual JWT token obtained from the OAuth 2.1 flow at `/mcp_oauth_test.html`.
 
 ## 🚀 Quick Deploy to Azure
 
@@ -138,7 +136,7 @@ Before connecting any MCP client, you must authenticate:
 - Active Azure subscription
 - **Completed OAuth setup** (see [AUTH_SETUP.md](AUTH_SETUP.md))
 
-### Deploy in 4 Commands
+### Deploy in 5 Commands
 
 ```bash
 # 1. Login to Azure
@@ -153,7 +151,13 @@ azd env set AZURE_TENANT_ID "your-tenant-id"
 azd env set AZURE_CLIENT_SECRET "your-client-secret"
 azd env set JWT_SECRET_KEY "your-secure-jwt-secret"
 
-# 4. Deploy to Azure
+# 4. Deploy to Azure (first time to get the URL)
+azd up
+
+# 5. Update environment with deployed URL and redeploy
+azd env set BASE_URL "https://app-web-[unique-id].azurewebsites.net"
+azd env set AZURE_REDIRECT_URI "https://app-web-[unique-id].azurewebsites.net/auth/azure/callback"
+azd env set ENVIRONMENT "production"
 azd up
 ```
 
@@ -164,13 +168,15 @@ azd up
 1. Note your deployed URL: `https://app-web-[unique-id].azurewebsites.net/`
 2. Go to Azure Portal → Microsoft Entra ID → App registrations → Your App
 3. Click **Authentication** → Add redirect URI:
-   `https://app-web-[unique-id].azurewebsites.net/auth/callback`
+   `https://app-web-[unique-id].azurewebsites.net/auth/azure/callback`
 4. Click **Save**
+
+> 💡 **Note**: The redirect URI must be `/auth/azure/callback` (not `/auth/callback`) for the MCP OAuth 2.1 flow to work correctly.
 
 ### Test Your Deployment
 
 After deployment, your authenticated MCP server will be available at:
-- **Authentication Test**: `https://<your-app>.azurewebsites.net/test-auth`
+- **OAuth 2.1 Test Interface**: `https://<your-app>.azurewebsites.net/mcp_oauth_test.html`
 - **Health Check**: `https://<your-app>.azurewebsites.net/health`
 - **MCP Capabilities**: `https://<your-app>.azurewebsites.net/mcp/capabilities`
 - **API Docs**: `https://<your-app>.azurewebsites.net/docs`
@@ -201,14 +207,23 @@ Follow the same guidance as the local setup, but use your Azure App Service URL 
 ## 🧪 Testing
 
 ### Interactive OAuth 2.1 Testing
-- **Local**: Visit http://localhost:8000/test-auth
-- **Azure**: Visit `https://<your-app>.azurewebsites.net/test-auth`
+- **Local**: Visit http://localhost:8000/mcp_oauth_test.html
+- **Azure**: Visit `https://<your-app>.azurewebsites.net/mcp_oauth_test.html`
 
 The test interface provides:
 1. **Complete OAuth 2.1 Flow**: Dynamic client registration → Authorization → Token exchange
 2. **PKCE Validation**: Test the full Proof Key for Code Exchange flow
 3. **MCP Endpoint Testing**: Test authenticated weather tools
 4. **JWT Token Display**: View and validate your authentication tokens
+5. **Client Callback Testing**: Includes `/client-callback` endpoint for OAuth flow validation
+
+### OAuth Flow Architecture
+The server implements a complete OAuth 2.1 flow:
+- **Client Registration**: Dynamic client registration with auto-generated credentials
+- **Authorization**: User redirected to Azure AD for authentication
+- **Azure Callback**: Server receives Azure auth code at `/auth/azure/callback`
+- **Client Callback**: Server redirects to client's callback (e.g., `/client-callback`) with authorization code
+- **Token Exchange**: Client exchanges authorization code for JWT access token
 
 ### MCP Client Testing
 Test with any MCP-compatible client using the authenticated endpoints and your JWT token.
