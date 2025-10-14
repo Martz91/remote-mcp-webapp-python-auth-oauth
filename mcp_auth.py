@@ -26,7 +26,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # MCP Protocol Version (2025-03-26 Authorization Specification)
-MCP_PROTOCOL_VERSION = "2025-03-26"
+MCP_PROTOCOL_VERSION = "2025-06-18"
 
 # Configuration
 AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
