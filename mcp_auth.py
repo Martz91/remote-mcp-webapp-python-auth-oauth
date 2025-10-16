@@ -119,6 +119,7 @@ class PersistentStorage:
         
         self.auth_codes_file = os.path.join(self.storage_dir, 'authorization_codes.json')
         self.clients_file = os.path.join(self.storage_dir, 'registered_clients.json')
+        self.access_tokens_file = os.path.join(self.storage_dir, 'access_tokens.json')
         
         logger.info(f"Persistent storage initialized at: {self.storage_dir}")
     
@@ -178,6 +179,30 @@ class PersistentStorage:
         clients = self.get_registered_clients()
         clients[client_id] = client_data
         self._save_json(self.clients_file, clients)
+
+
+    def get_access_tokens(self):
+        """Get all access tokens"""
+        access_tokens = self._load_json(self.access_tokens_file)
+        # TODO Clean expired codes
+        return access_tokens
+    
+    def get_access_token(self, client_id: str, client_subject: str):
+        """Get access token for client id and client subject"""
+        composite_key = f"{client_id}-{client_subject}"
+        access_tokens = self.get_access_tokens()
+        if composite_key in access_tokens:
+            return access_tokens[composite_key]
+        # TODO Handle no access token found
+
+    
+    def set_access_token(self, client_id: str, client_subject: str, access_token: str):
+        """Set access token"""
+        access_tokens = self.get_access_tokens()
+        composite_key = f"{client_id}-{client_subject}"
+        access_tokens[composite_key] = access_token
+        self._save_json(self.access_tokens_file, access_tokens)
+
 
 # Initialize persistent storage
 persistent_storage = PersistentStorage()
@@ -346,12 +371,24 @@ class MCPAuthService:
         auth_data["azure_token"] = azure_token_data
         auth_data["user_info"] = user_info
         persistent_storage.set_authorization_code(state, auth_data)
+        
           # Return redirect to client
         clients = persistent_storage.get_registered_clients()
         client = clients[auth_data["client_id"]]
         redirect_params = {
             "code": state,  # Our authorization code
         }
+
+        # Store access token for client and user
+        logger.info(f"Auth data keys: ")
+        for key in auth_data.keys():
+            logger.info(f"{key}: {auth_data[key]}")
+
+        logger.info(f"user_info keys: ")
+        for key in user_info.keys():
+            logger.info(f"{key}: {user_info[key]}")
+        
+        persistent_storage.set_access_token(auth_data["client_id"], user_info["id"], azure_token_data)
         
         # Only include state if the original client provided one
         original_state = auth_data.get("original_state")
@@ -394,7 +431,7 @@ class MCPAuthService:
         
         # Create JWT token
         user_data = auth_data["user_info"]
-        access_token = self._create_jwt_token(user_data)
+        access_token = self._create_jwt_token(user_data, request.client_id)
         refresh_token = secrets.token_urlsafe(32)
         
         # Store refresh token
@@ -433,7 +470,7 @@ class MCPAuthService:
             raise HTTPException(status_code=400, detail="Invalid client")
         
         # Create new access token
-        access_token = self._create_jwt_token(token_data["user_info"])
+        access_token = self._create_jwt_token(token_data["user_info"], request.client_id)
         
         return TokenResponse(
             access_token=access_token,
@@ -481,12 +518,13 @@ class MCPAuthService:
                 
             return response.json()
     
-    def _create_jwt_token(self, user_data: Dict[str, Any]) -> str:
+    def _create_jwt_token(self, user_data: Dict[str, Any], client_id: str) -> str:
         """Create JWT token for authenticated user"""
         payload = {
             "sub": user_data.get("id"),
             "email": user_data.get("mail") or user_data.get("userPrincipalName"),
             "name": user_data.get("displayName"),
+            "azp": client_id,
             "iat": datetime.utcnow(),
             "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
         }
@@ -508,6 +546,9 @@ class MCPAuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token"
             )
+    
+    async def get_access_token(self, client_id: str, client_subject: str):
+        return persistent_storage.get_access_token(client_id, client_subject)
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Dependency to get current authenticated user"""
