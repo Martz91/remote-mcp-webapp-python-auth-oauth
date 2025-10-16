@@ -145,8 +145,6 @@ async def search_files(query: str, access_token: str) -> str:
     }
 
     try:
-        import json
-        #token_detail = json.loads(access_token)
         token = access_token["access_token"]
         response = await graph_client.post("/search/query", json=payload, access_token=token)
         response.raise_for_status()
@@ -227,7 +225,7 @@ class MCPServer:
 
 
         # SharePoint search tool
-        forecast_tool = Tool(
+        search_files_tool = Tool(
             name="search_files",
             description="Search files in SharePoint Online.",
             inputSchema={
@@ -241,7 +239,7 @@ class MCPServer:
                 "required": ["query"]
             }
         )
-        self.tools["search_files"] = forecast_tool
+        self.tools["search_files"] = search_files_tool
     
     def initialize_resources(self):
         """Initialize available resources"""
@@ -545,68 +543,68 @@ async def authorize(
 @app.get("/auth/azure/callback")
 async def azure_callback(request: Request):
     """Handle Azure OAuth callback (third-party authorization)"""
-    # try:
-    # Get query parameters manually to handle optional state
-    code = request.query_params.get("code")
-    state = request.query_params.get("state")
-    error = request.query_params.get("error")
-    error_description = request.query_params.get("error_description")
-    
-    logger.info(f"Azure callback received - code: {code[:20] if code else 'None'}..., state: {state[:20] if state else 'None'}...")
-    logger.info(f"All query params: {dict(request.query_params)}")
-    
-    # Handle OAuth error responses
-    if error:
-        logger.error(f"Azure OAuth error: {error} - {error_description}")
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "oauth_error",
-                "detail": f"Azure OAuth error: {error}",
-                "error_description": error_description
-            }
-        )
-    
-    # Check for required code parameter
-    if not code:
-        logger.error("Azure callback missing code parameter")
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "missing_code_parameter",
-                "detail": "Authorization code is required for OAuth callback"
-            }
-        )
-    
-    # Handle case where state might be missing
-    if not state:
-        logger.error("Azure callback missing state parameter")
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "missing_state_parameter",
-                "detail": "State parameter is required for OAuth callback",
-                "code_preview": code[:20] + "..." if code else None
-            }
-        )
-    
-    # Process Azure callback and redirect to original client
-    redirect_url = await mcp_auth.handle_azure_callback(code, state)
-    logger.info(f"Redirecting to: {redirect_url}")
-    return RedirectResponse(url=redirect_url)
+    try:
+        # Get query parameters manually to handle optional state
+        code = request.query_params.get("code")
+        state = request.query_params.get("state")
+        error = request.query_params.get("error")
+        error_description = request.query_params.get("error_description")
         
-    # except Exception as e:
-    #     logger.error(f"Azure callback failed: {e}")
-    #     # Return more detailed error for debugging
-    #     return JSONResponse(
-    #         status_code=400,
-    #         content={
-    #             "error": "azure_callback_failed",
-    #             "detail": str(e),
-    #             "state": state,
-    #             "code_preview": code[:20] + "..." if code else None
-    #         }
-    #     )
+        logger.info(f"Azure callback received - code: {code[:20] if code else 'None'}..., state: {state[:20] if state else 'None'}...")
+        logger.info(f"All query params: {dict(request.query_params)}")
+        
+        # Handle OAuth error responses
+        if error:
+            logger.error(f"Azure OAuth error: {error} - {error_description}")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "oauth_error",
+                    "detail": f"Azure OAuth error: {error}",
+                    "error_description": error_description
+                }
+            )
+        
+        # Check for required code parameter
+        if not code:
+            logger.error("Azure callback missing code parameter")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "missing_code_parameter",
+                    "detail": "Authorization code is required for OAuth callback"
+                }
+            )
+        
+        # Handle case where state might be missing
+        if not state:
+            logger.error("Azure callback missing state parameter")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "missing_state_parameter",
+                    "detail": "State parameter is required for OAuth callback",
+                    "code_preview": code[:20] + "..." if code else None
+                }
+            )
+        
+        # Process Azure callback and redirect to original client
+        redirect_url = await mcp_auth.handle_azure_callback(code, state)
+        logger.info(f"Redirecting to: {redirect_url}")
+        return RedirectResponse(url=redirect_url)
+        
+    except Exception as e:
+         logger.error(f"Azure callback failed: {e}")
+         # Return more detailed error for debugging
+         return JSONResponse(
+             status_code=400,
+             content={
+                 "error": "azure_callback_failed",
+                 "detail": str(e),
+                 "state": state,
+                 "code_preview": code[:20] + "..." if code else None
+             }
+         )
 
 @app.post("/token", response_model=TokenResponse)
 async def token_endpoint(
@@ -752,15 +750,9 @@ async def mcp_stream_endpoint(request: Request, current_user: Dict[str, Any] = D
         
         message = await request.json()
         logger.info(f"User {current_user.get('email')} sent MCP message: {message}")
-
-        logger.info(f"------------------ User token data: {current_user.get('azure_token')}")
-        logger.info(f"------------------ User client id: {current_user.get('azp')} and sub: {current_user.get('sub')} ")
         
-        ################################################ now just get the token and pass it to the tool function
-        # composite_key = f"{current_user.get('azp')}-{current_user.get('sub')}"
+        # Get access token for this user
         access_token = await mcp_auth.get_access_token(current_user.get('azp'), current_user.get('sub'))
-
-        logger.info(f"------------------ Access token: {access_token}")
 
         method = message.get("method")
         params = message.get("params", {})
@@ -926,43 +918,7 @@ async def get_alerts_endpoint(
     except Exception as e:
         logger.error(f"Error in get_alerts: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    
-@app.post("/mcp/search_files")
-async def search_files_endpoint(
-    request: Request,
-    data: dict = Body(...)
-):
-    logger.info("Tool search_files called.")
-    """Direct endpoint for file search tool"""
-    # Check for MCP protocol version
-    protocol_version = request.headers.get("MCP-Protocol-Version")
-    if protocol_version:
-        logger.info(f"MCP Protocol Version: {protocol_version}")
-    
-    # Require authentication
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization header required"
-        )
-    
-    try:
-        query = data.get("query")
-        
-        if not query:
-            raise HTTPException(
-                status_code=400,
-                detail="query is required"
-            )
-        
-        # Call the search files function
-        search_result = await search_files(query)
-        return {"result": search_result}
-        
-    except Exception as e:
-        logger.error(f"Error in get_alerts: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -9,7 +9,7 @@ import hashlib
 import logging
 import json
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlencode, parse_qs, urlparse
 import jwt
@@ -25,7 +25,7 @@ load_dotenv()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# MCP Protocol Version (2025-03-26 Authorization Specification)
+# MCP Protocol Version (2025-06-18 Authorization Specification)
 MCP_PROTOCOL_VERSION = "2025-06-18"
 
 # Configuration
@@ -183,9 +183,14 @@ class PersistentStorage:
 
     def get_access_tokens(self):
         """Get all access tokens"""
-        access_tokens = self._load_json(self.access_tokens_file)
-        # TODO Clean expired codes
-        return access_tokens
+        data = self._load_json(self.access_tokens_file)
+        now = datetime.now(timezone.utc)
+        valid_tokens = {k: v for k, v in data.items() 
+                      if v.get('valid_to', 0) > now}
+        if len(valid_tokens) != len(data):
+            self._save_json(self.access_tokens_file, valid_tokens)
+
+        return valid_tokens
     
     def get_access_token(self, client_id: str, client_subject: str):
         """Get access token for client id and client subject"""
@@ -193,14 +198,17 @@ class PersistentStorage:
         access_tokens = self.get_access_tokens()
         if composite_key in access_tokens:
             return access_tokens[composite_key]
-        # TODO Handle no access token found
+        else:
+            return None
 
     
     def set_access_token(self, client_id: str, client_subject: str, access_token: str):
         """Set access token"""
         access_tokens = self.get_access_tokens()
+        now = datetime.now(timezone.utc)
+        valid_to = now + timedelta(seconds=access_token["expires_in"])
         composite_key = f"{client_id}-{client_subject}"
-        access_tokens[composite_key] = access_token
+        access_tokens[composite_key] = { "valid_to": valid_to, "access_token": access_token}
         self._save_json(self.access_tokens_file, access_tokens)
 
 
@@ -379,15 +387,7 @@ class MCPAuthService:
             "code": state,  # Our authorization code
         }
 
-        # Store access token for client and user
-        logger.info(f"Auth data keys: ")
-        for key in auth_data.keys():
-            logger.info(f"{key}: {auth_data[key]}")
-
-        logger.info(f"user_info keys: ")
-        for key in user_info.keys():
-            logger.info(f"{key}: {user_info[key]}")
-        
+        # Store access token for client and user       
         persistent_storage.set_access_token(auth_data["client_id"], user_info["id"], azure_token_data)
         
         # Only include state if the original client provided one

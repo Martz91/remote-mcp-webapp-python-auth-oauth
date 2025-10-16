@@ -16,8 +16,6 @@ class GraphClient:
         access_token: str
     ) -> httpx.Response:
 
-        print(f"-+-+-+-+-+-+-+-+- Using this token: {access_token}")
-
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json"
